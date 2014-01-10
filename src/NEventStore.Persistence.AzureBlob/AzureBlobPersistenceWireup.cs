@@ -9,20 +9,20 @@ using System.Transactions;
 
 namespace NEventStore.Persistence.AzureBlob
 {
-    public class AzureBlobPersistenceWireup : PersistenceWireup
-    {
-        private static readonly ILog Logger = LogFactory.BuildLogger(typeof (AzureBlobPersistenceWireup));
+	public class AzureBlobPersistenceWireup : PersistenceWireup
+	{
+		private static readonly ILog Logger = LogFactory.BuildLogger(typeof (AzureBlobPersistenceWireup));
 
-        public AzureBlobPersistenceWireup(Wireup inner, string connectionString, IDocumentSerializer serializer, AzureBlobPersistenceOptions persistenceOptions)
-            : base(inner)
-        {
-            Logger.Debug("Configuring Mongo persistence engine.");
+		public AzureBlobPersistenceWireup(Wireup inner, string connectionString, ISerialize serializer, AzureBlobPersistenceOptions persistenceOptions)
+			: base(inner)
+		{
+			Logger.Debug("Configuring Azure blob persistence engine.");
 
-            var options = Container.Resolve<TransactionScopeOption>();
-            if (options != TransactionScopeOption.Suppress)
-            { Logger.Warn(Messages.TransactionScopeNotSupportedSettingIgnored); }
+			var options = Container.Resolve<TransactionScopeOption>();
+			if (options != TransactionScopeOption.Suppress)
+			{ Logger.Warn(Messages.TransactionScopeNotSupportedSettingIgnored); }
 
 			Container.Register(c => new AzureBlobPersistenceFactory(connectionString, serializer, persistenceOptions).Build());
-        }
-    }
+		}
+	}
 }

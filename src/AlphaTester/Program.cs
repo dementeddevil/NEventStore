@@ -34,12 +34,15 @@ namespace AlphaTester
 				}
 				sw.Restart();
 
-				for ( int j = 0; j<= 10; ++j )
+                var sw2 = new Stopwatch();
+				for ( int j = 0; j<= 100; ++j )
 				{
+                    sw2.Restart();
                     repo = new TestRepository(repoType);
 					aggy = repo.GetSimpleAggregateById( start, 0 );
 					aggy.ChangeFoo( 52 );
 					repo.Save( aggy, Guid.NewGuid(), null );
+                    Console.WriteLine(string.Format("\t\tIt took me [{0}] ms", sw2.ElapsedMilliseconds));
 				}
 
 				Console.WriteLine( string.Format( "It took me [{0}] ms", sw.ElapsedMilliseconds ) );

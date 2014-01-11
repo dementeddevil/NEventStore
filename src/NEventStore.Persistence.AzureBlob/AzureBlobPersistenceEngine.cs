@@ -93,10 +93,10 @@ namespace NEventStore.Persistence.AzureBlob
 
 		public IEnumerable<ICommit> GetUndispatchedCommits()
 		{
-			//var blobs = _blobContainer
-			//.ListBlobs( useFlatBlobListing: true, blobListingDetails: BlobListingDetails.Metadata )
-			//.OfType<CloudBlockBlob>()
-			//.Where( b => b.Metadata[dispatchedMetadataKey] == "false" );
+            //var blobs = _blobContainer
+            //                .ListBlobs( useFlatBlobListing: true, blobListingDetails: BlobListingDetails.Metadata )
+            //                .OfType<CloudBlockBlob>()
+            //                .Where( b => b.Metadata[dispatchedMetadataKey] == "false" );
 
 			List<ICommit> commits = new List<ICommit>();
 			//foreach ( CloudBlockBlob blob in blobs )
@@ -302,7 +302,18 @@ namespace NEventStore.Persistence.AzureBlob
             using (var ms = new MemoryStream(newBucket, false))
             {
                 // if the header write fails, we will throw out.  the application will need to try again.  it will be as if
-                // this commit never succeeded.
+                // this commit never succeeded.  we need to also autogrow the page blob if we are going to exceed its max.  we grow by
+                // 50% or the minimum new size required, whichever is greater
+                var bytesRequired = startPage * 512 + ms.Length;
+                if (pageBlobReference.Properties.Length < bytesRequired)
+                {
+                    var currentSize = pageBlobReference.Properties.Length;
+                    var newSize = Math.Max((long)(currentSize * 1.5), bytesRequired);
+                    var remainder2 = newSize % 512;
+                    newSize = newSize + 512 - remainder2;
+                    pageBlobReference.Resize(newSize);
+                }
+
                 pageBlobReference.WritePages(ms, startPage * 512);
                 pageBlobReference.Metadata["header"] = Convert.ToBase64String(_serializer.Serialize(header));
                 pageBlobReference.SetMetadata();
@@ -346,8 +357,8 @@ namespace NEventStore.Persistence.AzureBlob
             {
                 if (ex.Message.Contains("404"))
                 {
-                    // this size should be configurable
-                    blob.Create(1024 * 1024 * 256);
+                    // this should be defined by an option
+                    blob.Create(1024 * 1);
                     blob.Metadata["header"] = Convert.ToBase64String(_serializer.Serialize(new PageBlobHeader()));
                     blob.FetchAttributes();
                 }

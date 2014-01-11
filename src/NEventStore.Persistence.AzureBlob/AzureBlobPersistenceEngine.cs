@@ -93,41 +93,49 @@ namespace NEventStore.Persistence.AzureBlob
 
 		public IEnumerable<ICommit> GetUndispatchedCommits()
 		{
-            //var blobs = _blobContainer
-            //                .ListBlobs( useFlatBlobListing: true, blobListingDetails: BlobListingDetails.Metadata )
-            //                .OfType<CloudBlockBlob>()
-            //                .Where( b => b.Metadata[dispatchedMetadataKey] == "false" );
+            // this is most likely extremely ineficcient as the size of our store grows to 100's of millions of aggregates (possibly even just 1000's)
+            var sw = new Stopwatch();
+            sw.Start();
+            var blobs = _blobContainer
+                            .ListBlobs(useFlatBlobListing: true, blobListingDetails: BlobListingDetails.Metadata)
+                            .OfType<CloudPageBlob>();
 
-			List<ICommit> commits = new List<ICommit>();
-			//foreach ( CloudBlockBlob blob in blobs )
-			//{
-			//	if ( blob.Metadata[dispatchedMetadataKey].Equals( "false", StringComparison.InvariantCultureIgnoreCase ) )
-			//	{
-			//		BlobBucket bucket;
-			//		using ( var stream = new MemoryStream() )
-			//		{
-			//			blob.DownloadToStream( stream );
-			//			var serializedBucket = stream.ToArray();
-			//			bucket = _serializer.Deserialize<BlobBucket>( serializedBucket );
-			//		}
-			//		var commit = new Commit( bucket.BucketId,
-			//								bucket.StreamId,
-			//								bucket.StreamRevision,
-			//								bucket.CommitId,
-			//								bucket.CommitSequence,
-			//								bucket.CommitStamp,
-			//								"1",
-			//								bucket.Headers,
-			//								bucket.Events );
-			//		commits.Add( commit );
-			//	}
-			//} 
+            List<ICommit> commits = new List<ICommit>();
+            foreach (var blob in blobs)
+            {
+                var header = GetHeader(blob);
+                var pageIndex = 0;
+                foreach (var blobDefinition in header.PageBlobCommitDefinitions)
+                {
+                    if (!blobDefinition.IsDispatched)
+                    {
+                        var startIndexBytes = pageIndex * 512;
+                        var commitBytes = new byte[blobDefinition.DataSizeBytes];
+
+                        using (var ms = new MemoryStream(blobDefinition.DataSizeBytes))
+                        {
+                            try
+                            {
+                                blob.DownloadRangeToStream(ms, startIndexBytes, blobDefinition.DataSizeBytes);
+                                ms.Position = 0;
+                                var bucket = _serializer.Deserialize<BlobBucket>(ms);
+                                commits.Add(CreateCommitFromBlobBucket(bucket));
+                            }
+                            catch (Exception ex)
+                            { Console.WriteLine("THIS IS CRITICAL A BLOB IS CORRUPTED"); }
+                        }
+                    }
+                    pageIndex += blobDefinition.TotalPagesUsed;
+                }
+            }
+
+            Console.WriteLine("Found [{0}] undispatched commits in [{1}] ms", commits.Count(), sw.ElapsedMilliseconds);
 			return commits;
 		}
 
 		public void MarkCommitAsDispatched( ICommit commit )
 		{
-            // get the blob... not worrying about leasing yet
+            // get the blob... not worrying about leasing yet, but i should :)
             var pageBlobReference = _blobContainer.GetPageBlobReference(GetContainerName() + "/" + commit.BucketId + "/" + commit.StreamId);
             CreateIfNotExistsAndFetchAttributes(pageBlobReference);
 
@@ -237,17 +245,7 @@ namespace NEventStore.Persistence.AzureBlob
                     using (var ms2 = new MemoryStream(byteContainer, 0, header.PageBlobCommitDefinitions[i].DataSizeBytes, false))
                     {
                         var bucket = _serializer.Deserialize<BlobBucket>(ms2);
-
-                        var commit = new Commit( bucket.BucketId,
-									bucket.StreamId,
-									bucket.StreamRevision,
-									bucket.CommitId,
-									bucket.CommitSequence,
-									bucket.CommitStamp,
-									"1",
-									bucket.Headers,
-									bucket.Events );
-					    commits.Add( commit );
+					    commits.Add(CreateCommitFromBlobBucket(bucket));
 
                     }
 
@@ -264,13 +262,7 @@ namespace NEventStore.Persistence.AzureBlob
             // get the blob... not worrying about leasing yet
             var pageBlobReference = _blobContainer.GetPageBlobReference(GetContainerName() + "/" + attempt.BucketId + "/" + attempt.StreamId);
             CreateIfNotExistsAndFetchAttributes(pageBlobReference);
-
-            string serializedHeader;
-            pageBlobReference.Metadata.TryGetValue("header", out serializedHeader);
-
-            var header = new PageBlobHeader();
-            if (serializedHeader != null)
-            { header = _serializer.Deserialize<PageBlobHeader>(Convert.FromBase64String(serializedHeader)); }
+            var header = GetHeader(pageBlobReference);
 
             // we must commit at a page offset, we will just track how many pages in we must start writing at
             var startPage = 0;
@@ -347,6 +339,33 @@ namespace NEventStore.Persistence.AzureBlob
 			throw new NotImplementedException();
 		}
 
+        #region private helpers
+
+        private ICommit CreateCommitFromBlobBucket(BlobBucket bucket)
+        {
+            var commit = new Commit(bucket.BucketId,
+                                       bucket.StreamId,
+                                       bucket.StreamRevision,
+                                       bucket.CommitId,
+                                       bucket.CommitSequence,
+                                       bucket.CommitStamp,
+                                       "1",
+                                       bucket.Headers,
+                                       bucket.Events);
+            return commit;
+        }
+
+        private PageBlobHeader GetHeader(CloudPageBlob blob)
+        {
+            string serializedHeader;
+            blob.Metadata.TryGetValue("header", out serializedHeader);
+
+            var header = new PageBlobHeader();
+            if (serializedHeader != null)
+            { header = _serializer.Deserialize<PageBlobHeader>(Convert.FromBase64String(serializedHeader)); }
+            return header;
+        }
+
         private void CreateIfNotExistsAndFetchAttributes(CloudPageBlob blob)
         {
             try
@@ -366,5 +385,7 @@ namespace NEventStore.Persistence.AzureBlob
                 { throw; }
             }
         }
-	}
+
+        #endregion
+    }
 }

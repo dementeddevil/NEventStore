@@ -18,35 +18,37 @@ namespace AlphaTester
                 { repoType = eRepositoryType.Sql; }
             }
 
-            Console.Write(string.Format("using [{0}] storage", repoType));            
+            var num = 10;
+            if (args.Length > 1)
+            { num = Convert.ToInt32(args[1]); }
 
-			Stopwatch sw = new Stopwatch();
-			for ( int i = 0; i != 3; ++i )
-			{
-				Guid start = Guid.NewGuid();
+            Console.Write(string.Format("using [{0}] storage", repoType));
 
-				TestRepository repo = new TestRepository(repoType);
-				SimpleAggregate aggy = repo.GetSimpleAggregateById( start, 0 );
-				if ( aggy == null || aggy.Id == Guid.Empty )
-				{
-					aggy = SimpleAggregate.CreateNew( DateTime.Now, start, 42 );
-					repo.Save( aggy, Guid.NewGuid(), null );
-				}
-				sw.Restart();
+            var options = new ParallelOptions();
+            options.MaxDegreeOfParallelism = 2;
+            Parallel.For(0, num, options, (i) =>
+            {
+                Stopwatch sw = new Stopwatch();
+                sw.Start();
+                Guid start = Guid.NewGuid();
+
+                TestRepository repo = new TestRepository(repoType);
+                var aggy = SimpleAggregate.CreateNew(DateTime.Now, start, 42);
+                repo.Save(aggy, Guid.NewGuid(), null);
 
                 var sw2 = new Stopwatch();
-				for ( int j = 0; j<= 100; ++j )
-				{
+                for (int j = 0; j <= 20; ++j)
+                {
                     sw2.Restart();
                     repo = new TestRepository(repoType);
-					aggy = repo.GetSimpleAggregateById( start, 0 );
-					aggy.ChangeFoo( 52 );
-					repo.Save( aggy, Guid.NewGuid(), null );
-                    Console.WriteLine(string.Format("\t\tIt took me [{0}] ms", sw2.ElapsedMilliseconds));
-				}
+                    aggy = repo.GetSimpleAggregateById(start, 0);
+                    aggy.ChangeFoo(52);
+                    repo.Save(aggy, Guid.NewGuid(), null);
+                    //Console.WriteLine(string.Format("\t\tIt took me [{0}] ms", sw2.ElapsedMilliseconds));
+                }
 
-				Console.WriteLine( string.Format( "It took me [{0}] ms", sw.ElapsedMilliseconds ) );
-			}
+                Console.WriteLine(string.Format("Iteration [{0}] took me [{1}] ms", i, sw.ElapsedMilliseconds));
+            });
 		}
 	}
 }

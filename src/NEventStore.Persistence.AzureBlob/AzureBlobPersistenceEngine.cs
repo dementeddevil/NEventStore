@@ -57,7 +57,7 @@ namespace NEventStore.Persistence.AzureBlob
 		public void Initialize()
 		{
 			if ( Interlocked.Increment( ref _initialized ) > 1 )
-			{ return; } 
+			{ return; }
 
 			_storageAccount = CloudStorageAccount.Parse( _connectionString );
 			_blobClient = _storageAccount.CreateCloudBlobClient();
@@ -68,104 +68,152 @@ namespace NEventStore.Persistence.AzureBlob
 		private string GetContainerName()
 		{
 			string containerSuffix = _options.ContainerType.ToString().ToLower();
-			return _options.ContainerName.ToLower() +containerSuffix;
+			return _options.ContainerName.ToLower() + containerSuffix;
 		}
 
-		public IEnumerable<ICommit> GetFrom(string bucketId, DateTime start)
+		public IEnumerable<ICommit> GetFrom( string bucketId, DateTime start )
 		{
 			throw new NotImplementedException();
 		}
 
-		public IEnumerable<ICommit> GetFrom(string checkpointToken = null)
+		public IEnumerable<ICommit> GetFrom( string checkpointToken = null )
 		{
 			throw new NotImplementedException();
 		}
 
-		public ICheckpoint GetCheckpoint(string checkpointToken = null)
+		public ICheckpoint GetCheckpoint( string checkpointToken = null )
 		{
 			throw new NotImplementedException();
 		}
 
-		public IEnumerable<ICommit> GetFromTo(string bucketId, DateTime start, DateTime end)
+		public IEnumerable<ICommit> GetFromTo( string bucketId, DateTime start, DateTime end )
 		{
 			throw new NotImplementedException();
 		}
 
 		public IEnumerable<ICommit> GetUndispatchedCommits()
 		{
-			var blobs = _blobContainer
-			.ListBlobs( useFlatBlobListing: true, blobListingDetails: BlobListingDetails.Metadata )
-			.OfType<CloudBlockBlob>()
-			.Where( b => b.Metadata[dispatchedMetadataKey] == "false" );
+			//var blobs = _blobContainer
+			//.ListBlobs( useFlatBlobListing: true, blobListingDetails: BlobListingDetails.Metadata )
+			//.OfType<CloudBlockBlob>()
+			//.Where( b => b.Metadata[dispatchedMetadataKey] == "false" );
 
 			List<ICommit> commits = new List<ICommit>();
-			foreach ( CloudBlockBlob blob in blobs )
-			{
-				if ( blob.Metadata[dispatchedMetadataKey].Equals( "false", StringComparison.InvariantCultureIgnoreCase ) )
-				{
-					BlobBucket bucket;
-					using ( var stream = new MemoryStream() )
-					{
-						blob.DownloadToStream( stream );
-						var serializedBucket = stream.ToArray();
-						bucket = _serializer.Deserialize<BlobBucket>( serializedBucket );
-					}
-					var commit = new Commit( bucket.BucketId,
-											bucket.StreamId,
-											bucket.StreamRevision,
-											bucket.CommitId,
-											bucket.CommitSequence,
-											bucket.CommitStamp,
-											"1",
-											bucket.Headers,
-											bucket.Events );
-					commits.Add( commit );
-				}
-			} 
+			//foreach ( CloudBlockBlob blob in blobs )
+			//{
+			//	if ( blob.Metadata[dispatchedMetadataKey].Equals( "false", StringComparison.InvariantCultureIgnoreCase ) )
+			//	{
+			//		BlobBucket bucket;
+			//		using ( var stream = new MemoryStream() )
+			//		{
+			//			blob.DownloadToStream( stream );
+			//			var serializedBucket = stream.ToArray();
+			//			bucket = _serializer.Deserialize<BlobBucket>( serializedBucket );
+			//		}
+			//		var commit = new Commit( bucket.BucketId,
+			//								bucket.StreamId,
+			//								bucket.StreamRevision,
+			//								bucket.CommitId,
+			//								bucket.CommitSequence,
+			//								bucket.CommitStamp,
+			//								"1",
+			//								bucket.Headers,
+			//								bucket.Events );
+			//		commits.Add( commit );
+			//	}
+			//} 
 			return commits;
 		}
 
-		public void MarkCommitAsDispatched(ICommit commit)
+		public void MarkCommitAsDispatched( ICommit commit )
 		{
+			Stopwatch sw = new Stopwatch();
+			sw.Start();
 			BlobBucket bucket;
 			Logger.Debug( "Marking commit id {0} for stream id {1} as dispatched", commit.CommitId, commit.StreamId );
 
-			var directory = _blobContainer.GetDirectoryReference( GetContainerName() + "/" + commit.BucketId + "/" + commit.StreamId );
+			//var directory = _blobContainer.GetDirectoryReference( GetContainerName() + "/" + commit.BucketId + "/" + commit.StreamId );
 
-			var blob = directory.ListBlobs( blobListingDetails: BlobListingDetails.Metadata ).OfType<CloudBlockBlob>()
-							.SingleOrDefault( b => b.Metadata["CommitSequence"] == commit.CommitSequence.ToString() ); 
+			//var blob = directory.ListBlobs( blobListingDetails: BlobListingDetails.Metadata ).OfType<CloudBlockBlob>()
+			//				.SingleOrDefault( b => b.Metadata["CommitSequence"] == commit.CommitSequence.ToString() );
 
-			if ( blob != null )
+			var blob = _blobContainer.GetBlockBlobReference( GetContainerName() + "/" + commit.BucketId + "/" + commit.StreamId );
+
+			if ( Exists( blob ) )
 			{
-				using ( var stream = new MemoryStream() )
+				var leaseId = blob.AcquireLease( new TimeSpan( 0, 0, 60 ), null );
+
+				var blockLists = blob.DownloadBlockList( BlockListingFilter.Committed );
+				var blockId = Convert.ToBase64String( System.Text.Encoding.UTF8.GetBytes( String.Format( "{0:D6}", commit.CommitSequence ) ) );
+				int offset = 0;
+				int length = 0;
+
+				List<string> knownBlockIds = new List<string>();
+
+				foreach ( var blockList in blockLists )
+				{ knownBlockIds.Add( blockList.Name ); }
+
+				foreach ( var blockList in blockLists )
 				{
-					blob.DownloadToStream( stream );
-					var serializedBucket = stream.ToArray();
-					bucket = _serializer.Deserialize<BlobBucket>( serializedBucket );
+					if ( blockList.Name.Equals( blockId ) )
+					{
+						length = (int)blockList.Length;
+						break;
+					}
+					else
+					{ offset += (int)blockList.Length; }
 				}
+
+				byte[] serializedBucket = new byte[length];
+				blob.DownloadRangeToByteArray( serializedBucket, 0, offset, length, AccessCondition.GenerateLeaseCondition( leaseId ) );
+				bucket = _serializer.Deserialize<BlobBucket>( serializedBucket );
+
+
+				//using ( var stream = new MemoryStream() )
+				//{
+				//	blob.DownloadRangeToStream( stream );
+				//	stream.Position = offset;
+					
+				//	stream.Read( serializedBucket, 0, length );
+
+				//}
 				bucket.Dispatched = true;
 
-				var blockBlobReference = _blobContainer.GetBlockBlobReference( GetContainerName() + "/"
-											+ blob.Metadata[bucketIdMetadataKey] + "/"
-											+ blob.Metadata[streamIdMetadataKey] + "/" 
-											+ blob.Metadata[commitSequenceMetadataKey] );
+				//var blockBlobReference = _blobContainer.GetBlockBlobReference( GetContainerName() + "/"
+				//							+ blob.Metadata[bucketIdMetadataKey] + "/"
+				//							+ blob.Metadata[streamIdMetadataKey] + "/" 
+				//							+ blob.Metadata[commitSequenceMetadataKey] );
 
-				blockBlobReference.Metadata[bucketIdMetadataKey] = blob.Metadata[bucketIdMetadataKey];
-				blockBlobReference.Metadata[streamIdMetadataKey] = blob.Metadata[streamIdMetadataKey];
-				blockBlobReference.Metadata[commitSequenceMetadataKey] = blob.Metadata[commitSequenceMetadataKey];
-				blockBlobReference.Metadata[streamRevisionMetadataKey] = blob.Metadata[streamRevisionMetadataKey];
-				blockBlobReference.Metadata[commitStampMetadataKey] = blob.Metadata[commitStampMetadataKey];
-				blockBlobReference.Metadata[dispatchedMetadataKey] = "true";
+				//blockBlobReference.Metadata[bucketIdMetadataKey] = blob.Metadata[bucketIdMetadataKey];
+				//blockBlobReference.Metadata[streamIdMetadataKey] = blob.Metadata[streamIdMetadataKey];
+				//blockBlobReference.Metadata[commitSequenceMetadataKey] = blob.Metadata[commitSequenceMetadataKey];
+				//blockBlobReference.Metadata[streamRevisionMetadataKey] = blob.Metadata[streamRevisionMetadataKey];
+				//blockBlobReference.Metadata[commitStampMetadataKey] = blob.Metadata[commitStampMetadataKey];
+				//blockBlobReference.Metadata[dispatchedMetadataKey] = "true";
 
 				var newSerializedBucker = _serializer.Serialize( bucket );
 				using ( var stream = new MemoryStream( newSerializedBucker ) )
 				{
+					//try
+					//{ blockBlobReference.UploadFromStream( stream ); }
+					//catch ( Exception ex )
+					//{ Logger.Warn( "failed to mark as dispatched. exception was {0}", ex ); }
+
 					try
-					{ blockBlobReference.UploadFromStream( stream ); }
+					{
+						Console.WriteLine( "MAD - before dl - " + sw.ElapsedMilliseconds );
+						blob.PutBlock( blockId, stream, null, AccessCondition.GenerateLeaseCondition( leaseId ) );
+						blob.PutBlockList( knownBlockIds, AccessCondition.GenerateLeaseCondition( leaseId ) );
+						Console.WriteLine( "MAD - after dl - " + sw.ElapsedMilliseconds );
+					}
 					catch ( Exception ex )
 					{ Logger.Warn( "failed to mark as dispatched. exception was {0}", ex ); }
+					finally
+					{ blob.ReleaseLease( AccessCondition.GenerateLeaseCondition( leaseId ) ); }
 				}
 			}
+			sw.Stop();
+			Console.WriteLine( "MarkAsDispatched - " + sw.ElapsedMilliseconds );
 		}
 
 		public void Purge()
@@ -173,7 +221,7 @@ namespace NEventStore.Persistence.AzureBlob
 			throw new NotImplementedException();
 		}
 
-		public void Purge(string bucketId)
+		public void Purge( string bucketId )
 		{
 			throw new NotImplementedException();
 		}
@@ -183,7 +231,7 @@ namespace NEventStore.Persistence.AzureBlob
 			throw new NotImplementedException();
 		}
 
-		public void DeleteStream(string bucketId, string streamId)
+		public void DeleteStream( string bucketId, string streamId )
 		{
 			throw new NotImplementedException();
 		}
@@ -205,56 +253,114 @@ namespace NEventStore.Persistence.AzureBlob
 			_disposed = true;
 		}
 
-		public IEnumerable<ICommit> GetFrom(string bucketId, string streamId, int minRevision, int maxRevision)
+		public IEnumerable<ICommit> GetFrom( string bucketId, string streamId, int minRevision, int maxRevision )
 		{
+			Stopwatch sw = new Stopwatch();
+			sw.Start();
 			Logger.Debug( "getting from minrevision {0} to maxrevision {1}", minRevision, maxRevision );
 
-			var directory = _blobContainer.GetDirectoryReference( GetContainerName() + "/" + bucketId + "/" + streamId );
+			//var directory = _blobContainer.GetDirectoryReference( GetContainerName() + "/" + bucketId + "/" + streamId );
 
-			var blobs = directory.ListBlobs( blobListingDetails: BlobListingDetails.Metadata ).OfType<CloudBlockBlob>();
+			//var blobs = directory.ListBlobs( blobListingDetails: BlobListingDetails.Metadata ).OfType<CloudBlockBlob>();
 
 			//var blobs = blobContainer.ListBlobs( blobListingDetails: BlobListingDetails.Metadata );
 			//Console.WriteLine( string.Format( "Call to GetFrom ListBlobs [{0}] ms", sw.ElapsedMilliseconds ) );
 
-			var po = new ParallelOptions();
-			po.MaxDegreeOfParallelism = Math.Min(8, Math.Max(1, blobs.Count()));
+			var blob = _blobContainer.GetBlockBlobReference( GetContainerName() + "/" + bucketId + "/" + streamId );
 
-			ConcurrentBag<ICommit> commits = new ConcurrentBag<ICommit>();
-			Parallel.ForEach( blobs, po,
-				blob =>
+			List<ICommit> commits = new List<ICommit>();
+			try
+			{
+
+				var leaseId = blob.AcquireLease( new TimeSpan( 0, 0, 60 ), null );
+				Console.WriteLine( "Get From before bl dl - " + sw.ElapsedMilliseconds );
+				var blockLists = blob.DownloadBlockList( BlockListingFilter.Committed, AccessCondition.GenerateLeaseCondition( leaseId ) );
+				Console.WriteLine( "Get From after bl dl - " + sw.ElapsedMilliseconds );
+				using ( var stream = new MemoryStream() )
 				{
-					var revision = Int32.Parse( blob.Metadata[streamRevisionMetadataKey] );
-					if ( revision >= minRevision )
-					{
-						BlobBucket bucket;
-						using ( var stream = new MemoryStream() )
-						{
-							blob.DownloadToStream( stream );
-							var serializedBucket = stream.ToArray();
-							bucket = _serializer.Deserialize<BlobBucket>( serializedBucket );
-						}
-						if ( bucket.StreamRevision - bucket.Items < maxRevision )
-						{
-							var commit = new Commit( bucket.BucketId,
-													bucket.StreamId,
-													bucket.StreamRevision,
-													bucket.CommitId,
-													bucket.CommitSequence,
-													bucket.CommitStamp,
-													"1",
-													bucket.Headers,
-													bucket.Events );
-							commits.Add( commit );
+					Console.WriteLine( "Get From before dl - " + sw.ElapsedMilliseconds );
+					blob.DownloadToStream( stream, AccessCondition.GenerateLeaseCondition( leaseId ) );
+					Console.WriteLine( "Get From after dl - " + sw.ElapsedMilliseconds );
+					stream.Position = 0;
 
+					foreach ( var blockList in blockLists )
+					{
+						byte[] serializedBucket = new byte[blockList.Length];
+						stream.Read( serializedBucket, 0, (int)blockList.Length );
+
+						using ( var memoryStream = new MemoryStream( serializedBucket ) )
+						{
+							var bucket = _serializer.Deserialize<BlobBucket>( memoryStream );
+
+							if ( bucket.StreamRevision >= minRevision && bucket.StreamRevision - bucket.Items < maxRevision )
+							{
+								var commit = new Commit( bucket.BucketId,
+									bucket.StreamId,
+									bucket.StreamRevision,
+									bucket.CommitId,
+									bucket.CommitSequence,
+									bucket.CommitStamp,
+									"1",
+									bucket.Headers,
+									bucket.Events );
+								commits.Add( commit );
+							}
 						}
 					}
-			});
-			IOrderedEnumerable<ICommit> sorted = commits.ToList().OrderBy( c => c.StreamRevision );
+				}
+
+				blob.ReleaseLease( AccessCondition.GenerateLeaseCondition( leaseId ) );
+			}
+			catch ( Microsoft.WindowsAzure.Storage.StorageException ex )
+			{
+				if ( !ex.Message.Contains( "404" ) )
+				{ throw; }
+			}
+			//var po = new ParallelOptions();
+			//po.MaxDegreeOfParallelism = Math.Min(8, Math.Max(1, blobs.Count()));
+
+			//ConcurrentBag<ICommit> commits = new ConcurrentBag<ICommit>();
+			//Parallel.ForEach( blobs, po,
+			//	blob =>
+			//	{
+			//		var revision = Int32.Parse( blob.Metadata[streamRevisionMetadataKey] );
+			//		if ( revision >= minRevision )
+			//		{
+			//			BlobBucket bucket;
+			//			using ( var stream = new MemoryStream() )
+			//			{
+			//				blob.DownloadToStream( stream );
+			//				var serializedBucket = stream.ToArray();
+			//				bucket = _serializer.Deserialize<BlobBucket>( serializedBucket );
+			//			}
+			//			if ( bucket.StreamRevision - bucket.Items < maxRevision )
+			//			{
+			//				var commit = new Commit( bucket.BucketId,
+			//										bucket.StreamId,
+			//										bucket.StreamRevision,
+			//										bucket.CommitId,
+			//										bucket.CommitSequence,
+			//										bucket.CommitStamp,
+			//										"1",
+			//										bucket.Headers,
+			//										bucket.Events );
+			//				commits.Add( commit );
+
+			//			}
+			//		}
+			//});
+			IOrderedEnumerable<ICommit> sorted = commits.OrderBy( c => c.StreamRevision );
+			sw.Stop();
+			Console.WriteLine( "GetFrom - " + sw.ElapsedMilliseconds );
 			return sorted;
 		}
 
-		public ICommit Commit(CommitAttempt attempt)
+		public ICommit Commit( CommitAttempt attempt )
 		{
+			Stopwatch sw = new Stopwatch();
+			sw.Start();
+			bool newBlob = true;
+			string leaseId = String.Empty;
 			var bucket = new BlobBucket();
 			bucket.BucketId = attempt.BucketId;
 			bucket.CommitId = attempt.CommitId;
@@ -266,32 +372,79 @@ namespace NEventStore.Persistence.AzureBlob
 			bucket.StreamRevision = attempt.StreamRevision;
 			bucket.Items = attempt.Events.Count;
 
+			List<string> knownBlockIds = new List<string>();
 			var serializedBucket = _serializer.Serialize( bucket );
+			var blockId = Convert.ToBase64String( System.Text.Encoding.UTF8.GetBytes( String.Format( "{0:D6}", attempt.CommitSequence ) ) );
 
-			var blockBlobReference = _blobContainer.GetBlockBlobReference( GetContainerName() + "/" + attempt.BucketId + "/" + attempt.StreamId + "/" + attempt.CommitSequence );
-
-			blockBlobReference.Metadata[bucketIdMetadataKey] = attempt.BucketId;
-			blockBlobReference.Metadata[streamIdMetadataKey] = attempt.StreamId;
-			blockBlobReference.Metadata[commitSequenceMetadataKey] = attempt.CommitSequence.ToString();
-			blockBlobReference.Metadata[streamRevisionMetadataKey] = attempt.StreamRevision.ToString();
-			blockBlobReference.Metadata[commitStampMetadataKey] = attempt.CommitStamp.ToString( "u" );
-			blockBlobReference.Metadata[dispatchedMetadataKey] = "false";
-
-			using ( var stream = new MemoryStream( serializedBucket ) )
+			//var blockBlobReference = _blobContainer.GetBlockBlobReference( GetContainerName() + "/" + attempt.BucketId + "/" + attempt.StreamId + "/" + attempt.CommitSequence );
+			var blockBlobReference = _blobContainer.GetBlockBlobReference( GetContainerName() + "/" + attempt.BucketId + "/" + attempt.StreamId );
+			if ( Exists( blockBlobReference ) )
 			{
-				try
+				leaseId = blockBlobReference.AcquireLease( new TimeSpan( 0, 0, 60 ), null );
+				newBlob = false;
+				var blockLists = blockBlobReference.DownloadBlockList( BlockListingFilter.Committed );
+				Console.WriteLine( "Commit downloaded list - " + sw.ElapsedMilliseconds );
+				sw.Restart();
+				foreach ( var blockList in blockLists )
 				{
-					blockBlobReference.UploadFromStream( stream, AccessCondition.GenerateIfNoneMatchCondition( "*" ) );
-				}
-				catch ( StorageException ex )
-				{
-					if ( ex.Message.Contains( "(409) Conflict" ) )
-					{ throw new DuplicateCommitException( "Duplicate Commit Attempt", ex ); }
-					else
-					{ throw; }
+					if ( blockList.Name.Equals( blockId ) )
+					{ throw new DuplicateCommitException( "Duplicate Commit Attempt" ); }
+					knownBlockIds.Add( blockList.Name );
 				}
 			}
 
+
+
+			knownBlockIds.Add( blockId );
+
+			using ( var stream = new MemoryStream( serializedBucket ) )
+			{
+				if ( !newBlob )
+				{
+					blockBlobReference.PutBlock( blockId, stream, null, AccessCondition.GenerateLeaseCondition( leaseId ) );
+					Console.WriteLine( "Commit put block - " + sw.ElapsedMilliseconds );
+					sw.Restart();
+					blockBlobReference.PutBlockList( knownBlockIds, AccessCondition.GenerateLeaseCondition( leaseId ) ); 
+				}
+				else
+				{
+					blockBlobReference.PutBlock( blockId, stream, null );
+					Console.WriteLine( "Commit put block - " + sw.ElapsedMilliseconds );
+					sw.Restart();
+					blockBlobReference.PutBlockList( knownBlockIds );
+				}
+			}
+
+
+
+			if ( !newBlob )
+			{
+				blockBlobReference.ReleaseLease( AccessCondition.GenerateLeaseCondition( leaseId ) );
+			}
+
+			//blockBlobReference.Metadata[bucketIdMetadataKey] = attempt.BucketId;
+			//blockBlobReference.Metadata[streamIdMetadataKey] = attempt.StreamId;
+			//blockBlobReference.Metadata[commitSequenceMetadataKey] = attempt.CommitSequence.ToString();
+			//blockBlobReference.Metadata[streamRevisionMetadataKey] = attempt.StreamRevision.ToString();
+			//blockBlobReference.Metadata[commitStampMetadataKey] = attempt.CommitStamp.ToString( "u" );
+			//blockBlobReference.Metadata[dispatchedMetadataKey] = "false";
+
+			//using ( var stream = new MemoryStream( serializedBucket ) )
+			//{
+			//	try
+			//	{
+			//		blockBlobReference.UploadFromStream( stream, AccessCondition.GenerateIfNoneMatchCondition( "*" ) );
+			//	}
+			//	catch ( StorageException ex )
+			//	{
+			//		if ( ex.Message.Contains( "(409) Conflict" ) )
+			//		{ throw new DuplicateCommitException( "Duplicate Commit Attempt", ex ); }
+			//		else
+			//		{ throw; }
+			//	}
+			//}
+			sw.Stop();
+			Console.WriteLine( "Commit - " + sw.ElapsedMilliseconds );
 			return new Commit(
 					attempt.BucketId,
 					attempt.StreamId,
@@ -299,25 +452,41 @@ namespace NEventStore.Persistence.AzureBlob
 					attempt.CommitId,
 					attempt.CommitSequence,
 					attempt.CommitStamp,
-					// Hardcode checkpoint for now
+				// Hardcode checkpoint for now
 					"1",
 					attempt.Headers,
 					attempt.Events );
 		}
 
-		public ISnapshot GetSnapshot(string bucketId, string streamId, int maxRevision)
+		public ISnapshot GetSnapshot( string bucketId, string streamId, int maxRevision )
 		{
 			return null;
 		}
 
-		public bool AddSnapshot(ISnapshot snapshot)
+		public bool AddSnapshot( ISnapshot snapshot )
 		{
 			throw new NotImplementedException();
 		}
 
-		public IEnumerable<IStreamHead> GetStreamsToSnapshot(string bucketId, int maxThreshold)
+		public IEnumerable<IStreamHead> GetStreamsToSnapshot( string bucketId, int maxThreshold )
 		{
 			throw new NotImplementedException();
+		}
+
+		private bool Exists( CloudBlockBlob blob )
+		{
+			try
+			{
+				blob.FetchAttributes();
+				return true;
+			}
+			catch ( Microsoft.WindowsAzure.Storage.StorageException ex )
+			{
+				if ( ex.Message.Contains( "404" ) )
+				{ return false; }
+				else
+				{ throw; }
+			}
 		}
 	}
 }

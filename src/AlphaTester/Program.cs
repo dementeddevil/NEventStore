@@ -11,15 +11,21 @@ namespace AlphaTester
 	{
 		static void Main( string[] args )
 		{
-			//Guid start = Guid.Parse( "9b98f232-2369-48ba-99f6-20a4e3397434" );
+            var repoType = eRepositoryType.AzureBlob;
+            if (args.Length > 0)
+            {
+                if (args[0].Equals("sql", StringComparison.OrdinalIgnoreCase))
+                { repoType = eRepositoryType.Sql; }
+            }
 
+            Console.Write(string.Format("using [{0}] storage", repoType));            
 
 			Stopwatch sw = new Stopwatch();
 			for ( int i = 0; i != 3; ++i )
 			{
 				Guid start = Guid.NewGuid();
 
-				TestRepository repo = new TestRepository();
+				TestRepository repo = new TestRepository(repoType);
 				SimpleAggregate aggy = repo.GetSimpleAggregateById( start, 0 );
 				if ( aggy == null || aggy.Id == Guid.Empty )
 				{
@@ -28,55 +34,16 @@ namespace AlphaTester
 				}
 				sw.Restart();
 
-				for ( int j = 0; j<= 20; ++j )
+				for ( int j = 0; j<= 10; ++j )
 				{
-					repo = new TestRepository();
+                    repo = new TestRepository(repoType);
 					aggy = repo.GetSimpleAggregateById( start, 0 );
 					aggy.ChangeFoo( 52 );
 					repo.Save( aggy, Guid.NewGuid(), null );
 				}
 
-				//	repo = new TestRepository();
-				//aggy = repo.GetSimpleAggregateById( start, 0 );
-				//if ( aggy == null || aggy.Id == Guid.Empty )
-				//{
-				//	aggy = SimpleAggregate.CreateNew( DateTime.Now, start, 42 );
-				//	repo.Save( aggy, Guid.NewGuid(), null );
-				//}
-				//repo = new TestRepository();
-				//aggy = repo.GetSimpleAggregateById( start, 0 );
-
-				//aggy.ChangeFoo( 52 );
-				//repo.Save( aggy, Guid.NewGuid(), null );
-
-				//repo = new TestRepository();
-				//aggy = repo.GetSimpleAggregateById( start, 0 );
-				//aggy.ChangeFoo( 62 );
-				//repo.Save( aggy, Guid.NewGuid(), null );
-
-				//repo = new TestRepository();
-				//aggy = repo.GetSimpleAggregateById( start, 0 );
-				//aggy.ChangeFoo( 72 );
-				//repo.Save( aggy, Guid.NewGuid(), null );
-
-				//repo = new TestRepository();
-				//aggy = repo.GetSimpleAggregateById( start, 0 );
-				//aggy.ChangeFoo( 82 );
-				//repo.Save( aggy, Guid.NewGuid(), null );
-
-				//repo = new TestRepository();
-				//aggy = repo.GetSimpleAggregateById( start, 0 );
-				//aggy.ChangeFoo( 92 );
-				//repo.Save( aggy, Guid.NewGuid(), null );
-
-				//TestRepository repo2 = new TestRepository();
-
 				Console.WriteLine( string.Format( "It took me [{0}] ms", sw.ElapsedMilliseconds ) );
 			}
-
-			//var newAggy = repo2.GetSimpleAggregateById( start, 3 );
-			//repo = new TestRepository();
-			//aggy = repo.GetSimpleAggregateById( start, 0 );
 		}
 	}
 }

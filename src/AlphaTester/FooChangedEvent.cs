@@ -18,7 +18,7 @@ namespace AlphaTester
 		public FooChangedEvent( int newFoo )
 		{
 			NewFoo = newFoo;
-			NewFooKb = new byte[newFoo];
+			NewFooKb = new byte[newFoo * 10];
 		}
 	}
 }

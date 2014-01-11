@@ -14,11 +14,28 @@ using System.Data.SqlClient;
 
 namespace AlphaTester
 {
+    public enum eRepositoryType
+    {
+        Sql,
+        AzureBlob
+    }
+
 	/// <summary>
 	/// Base class for the NEventStoreRepositories we are using
 	/// </summary>
 	public abstract class NEventStoreRepositoryBase
 	{
+        private eRepositoryType _repositoryType;
+
+        /// <summary>
+        /// Create new NEventStoreRepositoryBase
+        /// </summary>
+        /// <param name="repositoryType"></param>
+        public NEventStoreRepositoryBase(eRepositoryType repositoryType)
+        {
+            _repositoryType = repositoryType;
+        }
+
 		/// <summary>
 		/// Lazily initialize the event storage engine.  depending on the type of persistence engine
 		/// desired, this will create the persistence layer.
@@ -34,9 +51,12 @@ namespace AlphaTester
 					{
 						var wireup = Wireup.Init();
 
-						wireup = WireupAzureBlobRepository( wireup );
-
-						//wireup = WireupSqlServerRepository( wireup );
+                        if (_repositoryType == eRepositoryType.AzureBlob)
+                        { wireup = WireupAzureBlobRepository(wireup); }
+                        else if (_repositoryType == eRepositoryType.Sql)
+                        { wireup = WireupSqlServerRepository(wireup); }
+                        else
+                        { throw new Exception("unknown repository type"); }
 
 						storeEventsInstance = wireup
 							.UsingSynchronousDispatchScheduler()
@@ -71,7 +91,8 @@ namespace AlphaTester
 		private Wireup WireupAzureBlobRepository( Wireup wireup )
 		{
 
-			var connectionString = "DefaultEndpointsProtocol=https;AccountName=bobafett;AccountKey=nOaTY+Pds2LQGm/2mW5nhi5WP4cYmip6Rg1RYHgZRhN3IbzDAfRugMafA0cqjQ49cVtd309F8+Dz9hGMH6iCuQ==";
+            //var connectionString = "DefaultEndpointsProtocol=https;AccountName=bobafett;AccountKey=nOaTY+Pds2LQGm/2mW5nhi5WP4cYmip6Rg1RYHgZRhN3IbzDAfRugMafA0cqjQ49cVtd309F8+Dz9hGMH6iCuQ==";
+            var connectionString = "DefaultEndpointsProtocol=https;AccountName=chonieventstoretesting;AccountKey=CX2nQZ2QeL+1RcjIJh7h7fYz0fG1ujBgVrgmrVBX+Hw6LtJVVBotyEnvVuMrdquN//ImsytrcsnR6fz9e/c3Xw==";       // evans
 			var blobOptions = new AzureBlobPersistenceOptions( "simple", eAzureBlobContainerTypes.AggregateStream );
 
 			return wireup

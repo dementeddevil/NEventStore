@@ -16,6 +16,10 @@ namespace AlphaTester
 
 		private EventStoreRepository _repository;
 
+        public TestRepository(eRepositoryType repositoryType)
+            :base(repositoryType)
+        { }
+
 		/// <summary>
 		/// Get the specified aggregate by id
 		/// </summary>

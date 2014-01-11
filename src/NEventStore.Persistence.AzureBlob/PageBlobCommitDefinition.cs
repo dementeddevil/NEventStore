@@ -1,11 +1,10 @@
 ﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 
 namespace NEventStore.Persistence.AzureBlob
 {
+    /// <summary>
+    /// Definition of a single commit contained within a page blob
+    /// </summary>
     [Serializable]
     public class PageBlobCommitDefinition
     {
@@ -22,6 +21,12 @@ namespace NEventStore.Persistence.AzureBlob
         /// Id of the commit
         /// </summary>
         public Guid CommitId
+        { get; private set; }
+
+        /// <summary>
+        /// The utc time of the commit
+        /// </summary>
+        public DateTime CommitStampUtc
         { get; private set; }
 
         /// <summary>
@@ -46,16 +51,18 @@ namespace NEventStore.Persistence.AzureBlob
         }
 
         /// <summary>
-        /// 
+        /// Create a new PageBlobCommitDefinition
         /// </summary>
         /// <param name="dataSizeBytes"></param>
         /// <param name="commitId"></param>
         /// <param name="revision"></param>
-        public PageBlobCommitDefinition(int dataSizeBytes, Guid commitId, int revision)
+        /// <param name="commitStampUtc"></param>
+        public PageBlobCommitDefinition(int dataSizeBytes, Guid commitId, int revision, DateTime commitStampUtc)
         {
             DataSizeBytes = dataSizeBytes;
             CommitId = commitId;
             Revision = revision;
+            CommitStampUtc = commitStampUtc;
             IsDispatched = false;
         }
     }

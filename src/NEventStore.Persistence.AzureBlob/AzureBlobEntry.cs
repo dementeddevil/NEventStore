@@ -10,16 +10,16 @@ namespace NEventStore.Persistence.AzureBlob
 	/// This holds the serialized data from commits
 	/// </summary>
 	[Serializable]
-	public class BlobBucket
+	public class AzureBlobEntry
 	{
 		/// <summary>
-		/// The value which identifies bucket to which the the stream and the the commit belongs.
+		/// The value which identifies blobEntry to which the the stream and the the commit belongs.
 		/// </summary>
 		public string BucketId
 		{ get; set; }
 
 		/// <summary>
-		/// The value which uniquely identifies the stream in a bucket to which the commit belongs.
+		/// The value which uniquely identifies the stream in a blobEntry to which the commit belongs.
 		/// </summary>
 		public string StreamId
 		{ get; set; }
@@ -28,12 +28,6 @@ namespace NEventStore.Persistence.AzureBlob
 		/// The value which indicates the revision of the most recent event in the stream to which this commit applies.
 		/// </summary>
 		public int StreamRevision
-		{ get; set; }
-
-		/// <summary>
-		///  Number of events attached to this commit.
-		/// </summary>
-		public int Items
 		{ get; set; }
 
 		/// <summary>
@@ -51,7 +45,7 @@ namespace NEventStore.Persistence.AzureBlob
 		/// <summary>
 		/// The point in time at which the commit was persisted.
 		/// </summary>
-		public DateTime CommitStamp
+		public DateTime CommitStampUtc
 		{ get; set; }
 
 		/// <summary>
@@ -64,12 +58,6 @@ namespace NEventStore.Persistence.AzureBlob
 		/// The collection of event messages to be committed as a single unit.
 		/// </summary>
 		public List<EventMessage> Events
-		{ get; set; }
-
-		/// <summary>
-		/// Whether the commit has been dispatched.
-		/// </summary>
-		public bool Dispatched
 		{ get; set; }
 	}
 }

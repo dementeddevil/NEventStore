@@ -38,6 +38,13 @@ namespace AlphaTester
 			return _repository.GetById<SimpleAggregate>( id, version );
 		}
 
+		public List<ICommit> GetSimpleAggregateFromTo( DateTime start, DateTime end )
+		{
+
+			LazyInit( ref _storeEvents, _lockObject );
+			return _storeEvents.Advanced.GetFromTo( Bucket.Default, start, end ).ToList();
+		}
+
 		/// <summary>
 		/// Save the specified aggregate
 		/// </summary>

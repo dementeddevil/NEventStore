@@ -14,27 +14,27 @@ using System.Data.SqlClient;
 
 namespace AlphaTester
 {
-    public enum eRepositoryType
-    {
-        Sql,
-        AzureBlob
-    }
+	public enum eRepositoryType
+	{
+		Sql,
+		AzureBlob
+	}
 
 	/// <summary>
 	/// Base class for the NEventStoreRepositories we are using
 	/// </summary>
 	public abstract class NEventStoreRepositoryBase
 	{
-        private eRepositoryType _repositoryType;
+		private eRepositoryType _repositoryType;
 
-        /// <summary>
-        /// Create new NEventStoreRepositoryBase
-        /// </summary>
-        /// <param name="repositoryType"></param>
-        public NEventStoreRepositoryBase(eRepositoryType repositoryType)
-        {
-            _repositoryType = repositoryType;
-        }
+		/// <summary>
+		/// Create new NEventStoreRepositoryBase
+		/// </summary>
+		/// <param name="repositoryType"></param>
+		public NEventStoreRepositoryBase(eRepositoryType repositoryType)
+		{
+			_repositoryType = repositoryType;
+		}
 
 		/// <summary>
 		/// Lazily initialize the event storage engine.  depending on the type of persistence engine
@@ -51,12 +51,12 @@ namespace AlphaTester
 					{
 						var wireup = Wireup.Init();
 
-                        if (_repositoryType == eRepositoryType.AzureBlob)
-                        { wireup = WireupAzureBlobRepository(wireup); }
-                        else if (_repositoryType == eRepositoryType.Sql)
-                        { wireup = WireupSqlServerRepository(wireup); }
-                        else
-                        { throw new Exception("unknown repository type"); }
+						if (_repositoryType == eRepositoryType.AzureBlob)
+						{ wireup = WireupAzureBlobRepository(wireup); }
+						else if (_repositoryType == eRepositoryType.Sql)
+						{ wireup = WireupSqlServerRepository(wireup); }
+						else
+						{ throw new Exception("unknown repository type"); }
 
 						storeEventsInstance = wireup
 							.UsingSynchronousDispatchScheduler()
@@ -91,14 +91,15 @@ namespace AlphaTester
 		private Wireup WireupAzureBlobRepository( Wireup wireup )
 		{
 
-            //var connectionString = "DefaultEndpointsProtocol=https;AccountName=bobafett;AccountKey=nOaTY+Pds2LQGm/2mW5nhi5WP4cYmip6Rg1RYHgZRhN3IbzDAfRugMafA0cqjQ49cVtd309F8+Dz9hGMH6iCuQ==";
-            var connectionString = "DefaultEndpointsProtocol=https;AccountName=evansstagestorage;AccountKey=g+PQ9M7lt3PdkOy0KYLpRVXkkal+y+/Kun4IsBbNwE3SHnbBqJ86zyMKBEGgvf82KV9g1EOCUUHMhZOrUfPrUw==";       // evans
+			//var connectionString = "DefaultEndpointsProtocol=https;AccountName=bobafett;AccountKey=nOaTY+Pds2LQGm/2mW5nhi5WP4cYmip6Rg1RYHgZRhN3IbzDAfRugMafA0cqjQ49cVtd309F8+Dz9hGMH6iCuQ==";
+			var connectionString = "DefaultEndpointsProtocol=https;AccountName=bobafett;AccountKey=nOaTY+Pds2LQGm/2mW5nhi5WP4cYmip6Rg1RYHgZRhN3IbzDAfRugMafA0cqjQ49cVtd309F8+Dz9hGMH6iCuQ==";       // evans
 			var blobOptions = new AzureBlobPersistenceOptions( "simple", eAzureBlobContainerTypes.AggregateStream, blobGrowthRate: 1, defaultStartingBlobSizeKb: 5 );
-
+			var eventStore = new byte[] { 80, 94, 86, 128, 97, 74, 65, 94, 91, 126, 62, 52, 129, 114, 86, 107 };
 			return wireup
-				.UsingAzureBlobPersistence( connectionString, new BinarySerializer(), blobOptions )
+				.UsingAzureBlobPersistence( connectionString, blobOptions )
 				.InitializeStorageEngine()
-                .UsingBsonSerialization();
+				.UsingBinarySerialization()
+				.EncryptWith( eventStore );
 		}
 
 		/// <summary>

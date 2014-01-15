@@ -53,10 +53,10 @@ namespace NEventStore.Persistence.AzureBlob
         /// <summary>
         /// Create a new PageBlobCommitDefinition
         /// </summary>
-        /// <param name="dataSizeBytes"></param>
-        /// <param name="commitId"></param>
-        /// <param name="revision"></param>
-        /// <param name="commitStampUtc"></param>
+        /// <param name="dataSizeBytes">Size of the blob in bytes.</param>
+        /// <param name="commitId">Commit Id.</param>
+        /// <param name="revision">Stream Revision.</param>
+        /// <param name="commitStampUtc">Commit date/time stamp.</param>
         public PageBlobCommitDefinition(int dataSizeBytes, Guid commitId, int revision, DateTime commitStampUtc)
         {
             DataSizeBytes = dataSizeBytes;

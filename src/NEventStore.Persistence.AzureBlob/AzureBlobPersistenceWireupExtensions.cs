@@ -1,11 +1,4 @@
-﻿using NEventStore.Serialization;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-
-namespace NEventStore.Persistence.AzureBlob
+﻿namespace NEventStore.Persistence.AzureBlob
 {
 	public static class AzureBlobPersistenceWireupExtensions
 	{

@@ -27,7 +27,7 @@ namespace AlphaTester
 			var startTime = DateTime.UtcNow;
 
 			var options = new ParallelOptions();
-			options.MaxDegreeOfParallelism = 2;
+			options.MaxDegreeOfParallelism = 5;
 			Parallel.For(0, num, options, (i) =>
 			{
 				Stopwatch sw = new Stopwatch();

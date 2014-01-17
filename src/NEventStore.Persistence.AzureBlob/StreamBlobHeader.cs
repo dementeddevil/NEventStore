@@ -8,7 +8,7 @@ namespace NEventStore.Persistence.AzureBlob
     /// Holds the header infomation for a stream blob.
     /// </summary>
     [Serializable]
-    internal class PageBlobHeader
+    internal class StreamBlobHeader
     {
         private List<PageBlobCommitDefinition> _pageBlobCommitDefinitions;
 
@@ -30,7 +30,7 @@ namespace NEventStore.Persistence.AzureBlob
         /// <summary>
         /// Creates a new PageBlobHeader.
         /// </summary>
-        public PageBlobHeader()
+        public StreamBlobHeader()
         { _pageBlobCommitDefinitions = new List<PageBlobCommitDefinition>(); }
 
         /// <summary>

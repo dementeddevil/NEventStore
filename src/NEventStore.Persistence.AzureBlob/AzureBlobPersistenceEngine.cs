@@ -4,7 +4,6 @@ using NEventStore.Logging;
 using NEventStore.Serialization;
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Net;
@@ -103,7 +102,24 @@ namespace NEventStore.Persistence.AzureBlob
         /// <param name="checkpointToken"></param>
         /// <returns></returns>
         public IEnumerable<ICommit> GetFrom(string checkpointToken = null)
-        { throw new NotImplementedException("support for get from leveraging checkpoints is not yet implemented"); }
+        {
+            var blobs = _blobContainer.ListBlobs(GetContainerName(), true, BlobListingDetails.Metadata).OfType<CloudPageBlob>();
+
+            // this could be a tremendous amount of data.  Depending on system used
+            // this may not be performant enough and may require some sort of index be built.
+            var allCommitDefinitions = new List<Tuple<CloudPageBlob, PageBlobCommitDefinition>>();
+            foreach (var pageBlob in blobs)
+            {
+                var header = GetHeader(pageBlob);
+                foreach (var definition in header.PageBlobCommitDefinitions)
+                { allCommitDefinitions.Add(new Tuple<CloudPageBlob, PageBlobCommitDefinition>(pageBlob, definition)); }
+            }
+
+            // now sort the definitions so we can return out sorted
+            var orderedCommitDefinitions = allCommitDefinitions.OrderBy((x) => x.Item2.CheckPoint);
+            foreach (var orderedCommitDefinition in orderedCommitDefinitions)
+            { yield return CreateCommitFromDefinition(orderedCommitDefinition.Item1, orderedCommitDefinition.Item2); }
+        }
 
         /// <summary>
         /// Gets the list of commits from a given blobEntry, starting from a given date
@@ -115,65 +131,27 @@ namespace NEventStore.Persistence.AzureBlob
         /// <returns>The list of commits from the given blobEntry and greater than or equal to the start date and less than or equal to the end date.</returns>
         public IEnumerable<ICommit> GetFromTo(string bucketId, DateTime start, DateTime end)
         {
-            int startPage = 0;
-            int endPage = 0;
-            int startIndex = 0;
-            int numberOfCommits = 0;
-            List<ICommit> commits = new List<ICommit>();
-
-            // Get listing of all blobs.
             var blobs = _blobContainer
-            .ListBlobs(GetContainerName() + "/" + bucketId, true, BlobListingDetails.Metadata)
-            .OfType<CloudPageBlob>();
+                .ListBlobs(GetContainerName() + "/" + bucketId, true,
+                BlobListingDetails.Metadata).OfType<CloudPageBlob>();
 
+            // this could be a tremendous amount of data.  Depending on system used
+            // this may not be performant enough and may require some sort of index be built.
+            var allCommitDefinitions = new List<Tuple<CloudPageBlob, PageBlobCommitDefinition>>();
             foreach (var pageBlob in blobs)
             {
-                startPage = 0;
-                endPage = 0;
-                startIndex = 0;
-                numberOfCommits = 0;
-
                 var header = GetHeader(pageBlob);
-                foreach (var commitDefinition in header.PageBlobCommitDefinitions)
+                foreach (var definition in header.PageBlobCommitDefinitions)
                 {
-                    if (start > commitDefinition.CommitStampUtc)
-                    {
-                        ++startIndex;
-                        startPage += commitDefinition.TotalPagesUsed;
-                    }
-                    else if (end < commitDefinition.CommitStampUtc)
-                    { break; }
-                    else
-                    { ++numberOfCommits; }
-
-                    endPage += commitDefinition.TotalPagesUsed;
-                }
-
-                // download all the data
-                var totalBytes = (endPage - startPage + 1) * 512;
-                var byteContainer = new byte[totalBytes];
-                using (var ms = new MemoryStream(totalBytes))
-                {
-                    var offset = startPage * 512;
-                    pageBlob.DownloadRangeToStream(ms, offset, totalBytes);
-                    ms.Position = 0;
-
-                    // now walk it and make it so
-                    for (int i = startIndex; i != startIndex + numberOfCommits; ++i)
-                    {
-                        ms.Read(byteContainer, 0, header.PageBlobCommitDefinitions[i].DataSizeBytes);
-                        using (var ms2 = new MemoryStream(byteContainer, 0, header.PageBlobCommitDefinitions[i].DataSizeBytes, false))
-                        {
-                            var bucket = _serializer.Deserialize<AzureBlobEntry>(ms2);
-                            commits.Add(CreateCommitFromAzureBlobEntry(bucket));
-                        }
-
-                        var remainder = header.PageBlobCommitDefinitions[i].DataSizeBytes % 512;
-                        ms.Read(byteContainer, 0, 512 - remainder);
-                    }
+                    if (definition.CommitStampUtc >= start && definition.CommitStampUtc <= end)
+                    { allCommitDefinitions.Add(new Tuple<CloudPageBlob, PageBlobCommitDefinition>(pageBlob, definition)); }
                 }
             }
-            return commits.OrderBy(c => c.CommitStamp);
+
+            // now sort the definitions so we can return out sorted
+            var orderedCommitDefinitions = allCommitDefinitions.OrderBy((x) => x.Item2.CommitStampUtc);
+            foreach (var orderedCommitDefinition in orderedCommitDefinitions)
+            { yield return CreateCommitFromDefinition(orderedCommitDefinition.Item1, orderedCommitDefinition.Item2); }
         }
 
         /// <summary>
@@ -228,8 +206,8 @@ namespace NEventStore.Persistence.AzureBlob
                         ms.Read(byteContainer, 0, header.PageBlobCommitDefinitions[i].DataSizeBytes);
                         using (var ms2 = new MemoryStream(byteContainer, 0, header.PageBlobCommitDefinitions[i].DataSizeBytes, false))
                         {
-                            var bucket = _serializer.Deserialize<AzureBlobEntry>(ms2);
-                            commits.Add(CreateCommitFromAzureBlobEntry(bucket));
+                            var blobCommit = _serializer.Deserialize<AzureBlobCommit>(ms2);
+                            commits.Add(CreateCommitFromAzureBlobCommit(blobCommit));
                         }
 
                         var remainder = header.PageBlobCommitDefinitions[i].DataSizeBytes % 512;
@@ -254,54 +232,33 @@ namespace NEventStore.Persistence.AzureBlob
         /// <returns>A list of all undispatched commits.</returns>
         public IEnumerable<ICommit> GetUndispatchedCommits()
         {
-            // this is most likely extremely ineficcient as the size of our store grows to 100's of millions of aggregates (possibly even just 1000's)
-            var sw = new Stopwatch();
-            sw.Start();
+            // this is most likely extremely ineficcient as the size of our store grows to 100's of millions of streams (possibly even just 1000's)
             var blobs = _blobContainer
                             .ListBlobs(useFlatBlobListing: true, blobListingDetails: BlobListingDetails.Metadata)
                             .OfType<CloudPageBlob>();
 
-            List<ICommit> commits = new List<ICommit>();
-            long containerSizeBytes = 0;
 
-            foreach (var blob in blobs)
+
+            // this could be a tremendous amount of data.  Depending on system used
+            // this may not be performant enough and may require some sort of index be built.
+            var allCommitDefinitions = new List<Tuple<CloudPageBlob, PageBlobCommitDefinition>>();
+            foreach (var pageBlob in blobs)
             {
-                var header = GetHeader(blob);
-
+                var header = GetHeader(pageBlob);
                 if (header.UndispatchedCommitCount > 0)
                 {
-                    var pageIndex = 0;
-                    containerSizeBytes += blob.Properties.Length;
-                    foreach (var blobDefinition in header.PageBlobCommitDefinitions)
+                    foreach (var definition in header.PageBlobCommitDefinitions)
                     {
-                        if (!blobDefinition.IsDispatched)
-                        {
-                            var startIndexBytes = pageIndex * 512;
-                            var commitBytes = new byte[blobDefinition.DataSizeBytes];
-
-                            using (var ms = new MemoryStream(blobDefinition.DataSizeBytes))
-                            {
-                                blob.DownloadRangeToStream(ms, startIndexBytes, blobDefinition.DataSizeBytes);
-                                ms.Position = 0;
-
-                                AzureBlobEntry bucket;
-                                try
-                                { bucket = _serializer.Deserialize<AzureBlobEntry>(ms); }
-                                catch (Exception ex)
-                                {
-                                    // we hope this does not happen
-                                    var message = string.Format("Blob with uri [{0}] is corrupt.", blob.Uri);
-                                    throw new InvalidDataException(message, ex);
-                                }
-
-                                commits.Add(CreateCommitFromAzureBlobEntry(bucket));
-                            }
-                        }
-                        pageIndex += blobDefinition.TotalPagesUsed;
+                        if (!definition.IsDispatched)
+                        { allCommitDefinitions.Add(new Tuple<CloudPageBlob, PageBlobCommitDefinition>(pageBlob, definition)); }
                     }
                 }
             }
-            return commits;
+
+            // now sort the definitions so we can return out sorted
+            var orderedCommitDefinitions = allCommitDefinitions.OrderBy((x) => x.Item2.CommitStampUtc);
+            foreach (var orderedCommitDefinition in orderedCommitDefinitions)
+            { yield return CreateCommitFromDefinition(orderedCommitDefinition.Item1, orderedCommitDefinition.Item2); }
         }
 
         /// <summary>
@@ -327,10 +284,9 @@ namespace NEventStore.Persistence.AzureBlob
                     }
                 }
                 pageBlobReference.Metadata[_headerMetadataKey] = Convert.ToBase64String(_serializer.Serialize(header));
+                
                 try
-                {
-                    pageBlobReference.SetMetadata(AccessCondition.GenerateIfMatchCondition(eTag));
-                }
+                { pageBlobReference.SetMetadata(AccessCondition.GenerateIfMatchCondition(eTag)); }
                 catch (Microsoft.WindowsAzure.Storage.StorageException ex)
                 {
                     if (ex.Message.Contains("412"))
@@ -355,12 +311,14 @@ namespace NEventStore.Persistence.AzureBlob
         { _blobContainer.Delete(); }
 
         /// <summary>
-        /// Not yet implemented.
+        /// Purge a series of streams
         /// </summary>
         /// <param name="bucketId"></param>
         public void Purge(string bucketId)
         {
-            throw new NotImplementedException();
+            var blobs = _blobContainer.ListBlobs(GetContainerName() + "/" + bucketId, true, BlobListingDetails.Metadata).OfType<CloudPageBlob>();
+            foreach (var blob in blobs)
+            { blob.Delete(); }
         }
 
         /// <summary>
@@ -425,7 +383,7 @@ namespace NEventStore.Persistence.AzureBlob
                 startPage += commit.TotalPagesUsed;
             }
 
-            var bucket = new AzureBlobEntry();
+            var bucket = new AzureBlobCommit();
             bucket.BucketId = attempt.BucketId;
             bucket.CommitId = attempt.CommitId;
             bucket.CommitSequence = attempt.CommitSequence;
@@ -440,7 +398,7 @@ namespace NEventStore.Persistence.AzureBlob
             var newBucket = new byte[serializedBucket.Length + (512 - remainder)];
             Array.Copy(serializedBucket, newBucket, serializedBucket.Length);
 
-            header.AppendPageBlobCommitDefinition(new PageBlobCommitDefinition(serializedBucket.Length, attempt.CommitId, attempt.StreamRevision, attempt.CommitStamp));
+            header.AppendPageBlobCommitDefinition(new PageBlobCommitDefinition(serializedBucket.Length, attempt.CommitId, attempt.StreamRevision, attempt.CommitStamp, GetNextCheckPoint()));
             ++header.UndispatchedCommitCount;
             using (var ms = new MemoryStream(newBucket, false))
             {
@@ -463,7 +421,7 @@ namespace NEventStore.Persistence.AzureBlob
 
             pageBlobReference.ReleaseLease(AccessCondition.GenerateLeaseCondition(leaseId));
 
-            return CreateCommitFromAzureBlobEntry(bucket);
+            return CreateCommitFromAzureBlobCommit(bucket);
         }
 
         /// <summary>
@@ -496,22 +454,66 @@ namespace NEventStore.Persistence.AzureBlob
         #region private helpers
 
         /// <summary>
+        /// Creates a commit from the provided definition
+        /// </summary>
+        /// <param name="streamId"></param>
+        /// <param name="commitDefinition"></param>
+        /// <returns></returns>
+        private ICommit CreateCommitFromDefinition(CloudPageBlob blob, PageBlobCommitDefinition commitDefinition)
+        {
+            var header = GetHeader(blob);
+
+            int pageIndex = 0;
+            foreach (var blobDefinition in header.PageBlobCommitDefinitions)
+            {
+                var startIndexBytes = pageIndex * 512;
+
+                if (commitDefinition.CommitId == blobDefinition.CommitId)
+                { 
+                    var commitBytes = new byte[blobDefinition.DataSizeBytes];
+
+                    using (var ms = new MemoryStream(blobDefinition.DataSizeBytes))
+                    {
+                        blob.DownloadRangeToStream(ms, startIndexBytes, blobDefinition.DataSizeBytes);
+                        ms.Position = 0;
+
+                        AzureBlobCommit azureBlobCommit;
+                        try
+                        { azureBlobCommit = _serializer.Deserialize<AzureBlobCommit>(ms); }
+                        catch (Exception ex)
+                        {
+                            // we hope this does not happen
+                            var message = string.Format("Blob with uri [{0}] is corrupt.", blob.Uri);
+                            throw new InvalidDataException(message, ex);
+                        }
+
+                        return CreateCommitFromAzureBlobCommit(azureBlobCommit);
+                    }
+                }
+
+                pageIndex += blobDefinition.TotalPagesUsed;
+            }
+
+            var errorMessage = string.Format("Stream with Uri [{0}] does not contain commit with id [{1}].  stream is corrupt", blob.Uri, commitDefinition.CommitId);
+            throw new InvalidDataException(errorMessage);
+        }
+
+        /// <summary>
         /// Creates a Commit object from an AzureBlobEntry.
         /// </summary>
         /// <param name="blobEntry">The source AzureBlobEntry.</param>
         /// <returns>The populated Commit.</returns>
-        private ICommit CreateCommitFromAzureBlobEntry(AzureBlobEntry blobEntry)
+        private ICommit CreateCommitFromAzureBlobCommit(AzureBlobCommit blobEntry)
         {
-            var commit = new Commit(blobEntry.BucketId,
-                                       blobEntry.StreamId,
-                                       blobEntry.StreamRevision,
-                                       blobEntry.CommitId,
-                                       blobEntry.CommitSequence,
-                                       blobEntry.CommitStampUtc,
-                                       "1",
-                                       blobEntry.Headers,
-                                       blobEntry.Events);
-            return commit;
+            return new Commit(  blobEntry.BucketId,
+                                blobEntry.StreamId,
+                                blobEntry.StreamRevision,
+                                blobEntry.CommitId,
+                                blobEntry.CommitSequence,
+                                blobEntry.CommitStampUtc,
+                                blobEntry.CheckPoint.ToString(),
+                                blobEntry.Headers,
+                                blobEntry.Events);
         }
 
         /// <summary>
@@ -519,14 +521,14 @@ namespace NEventStore.Persistence.AzureBlob
         /// </summary>
         /// <param name="blob">The Blob.</param>
         /// <returns>A populated PageBlobHeader.</returns>
-        private PageBlobHeader GetHeader(CloudPageBlob blob)
+        private StreamBlobHeader GetHeader(CloudPageBlob blob)
         {
             string serializedHeader;
             blob.Metadata.TryGetValue(_headerMetadataKey, out serializedHeader);
 
-            var header = new PageBlobHeader();
+            var header = new StreamBlobHeader();
             if (serializedHeader != null)
-            { header = _serializer.Deserialize<PageBlobHeader>(Convert.FromBase64String(serializedHeader)); }
+            { header = _serializer.Deserialize<StreamBlobHeader>(Convert.FromBase64String(serializedHeader)); }
             return header;
         }
 
@@ -561,6 +563,14 @@ namespace NEventStore.Persistence.AzureBlob
                 { throw; }
             }
         }
+
+        /// <summary>
+        /// Gets the next checkpoint id
+        /// </summary>
+        /// <returns></returns>
+        private ulong GetNextCheckPoint()
+        { return 1ul; }
+
         #endregion
     }
 }

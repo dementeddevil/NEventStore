@@ -18,6 +18,12 @@ namespace NEventStore.Persistence.AzureBlob
         { get; private set; }
 
         /// <summary>
+        /// CheckPoint
+        /// </summary>
+        public ulong CheckPoint
+        { get; private set; }
+
+        /// <summary>
         /// Id of the commit
         /// </summary>
         public Guid CommitId
@@ -57,12 +63,13 @@ namespace NEventStore.Persistence.AzureBlob
         /// <param name="commitId">Commit Id.</param>
         /// <param name="revision">Stream Revision.</param>
         /// <param name="commitStampUtc">Commit date/time stamp.</param>
-        public PageBlobCommitDefinition(int dataSizeBytes, Guid commitId, int revision, DateTime commitStampUtc)
+        public PageBlobCommitDefinition(int dataSizeBytes, Guid commitId, int revision, DateTime commitStampUtc, ulong checkPoint)
         {
             DataSizeBytes = dataSizeBytes;
             CommitId = commitId;
             Revision = revision;
             CommitStampUtc = commitStampUtc;
+            CheckPoint = checkPoint;
             IsDispatched = false;
         }
     }

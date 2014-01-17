@@ -383,24 +383,26 @@ namespace NEventStore.Persistence.AzureBlob
                 startPage += commit.TotalPagesUsed;
             }
 
-            var bucket = new AzureBlobCommit();
-            bucket.BucketId = attempt.BucketId;
-            bucket.CommitId = attempt.CommitId;
-            bucket.CommitSequence = attempt.CommitSequence;
-            bucket.CommitStampUtc = attempt.CommitStamp;
-            bucket.Events = attempt.Events.ToList();
-            bucket.Headers = attempt.Headers;
-            bucket.StreamId = attempt.StreamId;
-            bucket.StreamRevision = attempt.StreamRevision;
-            var serializedBucket = _serializer.Serialize(bucket);
+            var blobCommit = new AzureBlobCommit();
+            blobCommit.BucketId = attempt.BucketId;
+            blobCommit.CommitId = attempt.CommitId;
+            blobCommit.CommitSequence = attempt.CommitSequence;
+            blobCommit.CommitStampUtc = attempt.CommitStamp;
+            blobCommit.Events = attempt.Events.ToList();
+            blobCommit.Headers = attempt.Headers;
+            blobCommit.StreamId = attempt.StreamId;
+            blobCommit.StreamRevision = attempt.StreamRevision;
+            var serializedBlobCommit = _serializer.Serialize(blobCommit);
 
-            var remainder = serializedBucket.Length % 512;
-            var newBucket = new byte[serializedBucket.Length + (512 - remainder)];
-            Array.Copy(serializedBucket, newBucket, serializedBucket.Length);
+            var remainder = serializedBlobCommit.Length % 512;
+            var pageAlignedBlobCommit = new byte[serializedBlobCommit.Length + (512 - remainder)];
+            Array.Copy(serializedBlobCommit, pageAlignedBlobCommit, serializedBlobCommit.Length);
 
-            header.AppendPageBlobCommitDefinition(new PageBlobCommitDefinition(serializedBucket.Length, attempt.CommitId, attempt.StreamRevision, attempt.CommitStamp, GetNextCheckPoint()));
+            header.AppendPageBlobCommitDefinition(new PageBlobCommitDefinition(serializedBlobCommit.Length, attempt.CommitId, attempt.StreamRevision,
+                attempt.CommitStamp, header.PageBlobCommitDefinitions.Count, startPage, GetNextCheckPoint()));
             ++header.UndispatchedCommitCount;
-            using (var ms = new MemoryStream(newBucket, false))
+
+            using (var ms = new MemoryStream(pageAlignedBlobCommit))
             {
                 // if the header write fails, we will throw out.  the application will need to try again.  it will be as if
                 // this commit never succeeded.  we need to also autogrow the page blob if we are going to exceed its max.
@@ -410,7 +412,8 @@ namespace NEventStore.Persistence.AzureBlob
                     var currentSize = pageBlobReference.Properties.Length;
                     var newSize = Math.Max((long)(currentSize * _options.BlobGrowthRatePercent), bytesRequired);
                     var remainder2 = newSize % 512;
-                    newSize = newSize + 512 - remainder2;
+                    if (remainder2 != 0)
+                    { newSize = newSize + 512 - remainder2; }
                     pageBlobReference.Resize(newSize, AccessCondition.GenerateLeaseCondition(leaseId));
                 }
 
@@ -420,8 +423,7 @@ namespace NEventStore.Persistence.AzureBlob
             }
 
             pageBlobReference.ReleaseLease(AccessCondition.GenerateLeaseCondition(leaseId));
-
-            return CreateCommitFromAzureBlobCommit(bucket);
+            return CreateCommitFromAzureBlobCommit(blobCommit);
         }
 
         /// <summary>
@@ -462,40 +464,25 @@ namespace NEventStore.Persistence.AzureBlob
         private ICommit CreateCommitFromDefinition(CloudPageBlob blob, PageBlobCommitDefinition commitDefinition)
         {
             var header = GetHeader(blob);
-
-            int pageIndex = 0;
-            foreach (var blobDefinition in header.PageBlobCommitDefinitions)
+                        
+            using (var ms = new MemoryStream(commitDefinition.DataSizeBytes))
             {
-                var startIndexBytes = pageIndex * 512;
+                var startIndex = commitDefinition.StartPage * 512;
+                blob.DownloadRangeToStream(ms, startIndex, commitDefinition.DataSizeBytes);
+                ms.Position = 0;
 
-                if (commitDefinition.CommitId == blobDefinition.CommitId)
-                { 
-                    var commitBytes = new byte[blobDefinition.DataSizeBytes];
-
-                    using (var ms = new MemoryStream(blobDefinition.DataSizeBytes))
-                    {
-                        blob.DownloadRangeToStream(ms, startIndexBytes, blobDefinition.DataSizeBytes);
-                        ms.Position = 0;
-
-                        AzureBlobCommit azureBlobCommit;
-                        try
-                        { azureBlobCommit = _serializer.Deserialize<AzureBlobCommit>(ms); }
-                        catch (Exception ex)
-                        {
-                            // we hope this does not happen
-                            var message = string.Format("Blob with uri [{0}] is corrupt.", blob.Uri);
-                            throw new InvalidDataException(message, ex);
-                        }
-
-                        return CreateCommitFromAzureBlobCommit(azureBlobCommit);
-                    }
+                AzureBlobCommit azureBlobCommit;
+                try
+                { azureBlobCommit = _serializer.Deserialize<AzureBlobCommit>(ms); }
+                catch (Exception ex)
+                {
+                    // we hope this does not happen
+                    var message = string.Format("Blob with uri [{0}] is corrupt.", blob.Uri);
+                    throw new InvalidDataException(message, ex);
                 }
 
-                pageIndex += blobDefinition.TotalPagesUsed;
+                return CreateCommitFromAzureBlobCommit(azureBlobCommit);
             }
-
-            var errorMessage = string.Format("Stream with Uri [{0}] does not contain commit with id [{1}].  stream is corrupt", blob.Uri, commitDefinition.CommitId);
-            throw new InvalidDataException(errorMessage);
         }
 
         /// <summary>

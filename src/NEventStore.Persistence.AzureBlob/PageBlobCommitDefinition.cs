@@ -36,6 +36,24 @@ namespace NEventStore.Persistence.AzureBlob
         { get; private set; }
 
         /// <summary>
+        /// The index into the collections of commits in the stream
+        /// </summary>
+        public int CommitIndex
+        { get; private set; }
+
+        /// <summary>
+        /// Get the start page for the commit
+        /// </summary>
+        public int StartPage
+        { get; private set; }
+
+        /// <summary>
+        /// CheckPoint
+        /// </summary>
+        public ulong CheckPoint
+        { get; private set; }
+
+        /// <summary>
         /// Get if the commit has been dispatched
         /// </summary>
         public bool IsDispatched
@@ -57,12 +75,18 @@ namespace NEventStore.Persistence.AzureBlob
         /// <param name="commitId">Commit Id.</param>
         /// <param name="revision">Stream Revision.</param>
         /// <param name="commitStampUtc">Commit date/time stamp.</param>
-        public PageBlobCommitDefinition(int dataSizeBytes, Guid commitId, int revision, DateTime commitStampUtc)
+        /// <param name="commitIndex">Commit index</param>
+        /// <param name="startPage">start page for this commit in the page blog</param>
+        /// <param name="checkPoint">the checkpoint for the commit</param>
+        public PageBlobCommitDefinition(int dataSizeBytes, Guid commitId, int revision, DateTime commitStampUtc, int commitIndex, int startPage, ulong checkPoint)
         {
             DataSizeBytes = dataSizeBytes;
             CommitId = commitId;
             Revision = revision;
             CommitStampUtc = commitStampUtc;
+            CommitIndex = commitIndex;
+            StartPage = startPage;
+            CheckPoint = checkPoint;
             IsDispatched = false;
         }
     }

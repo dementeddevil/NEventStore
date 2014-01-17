@@ -1,8 +1,5 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 
 namespace NEventStore.Persistence.AzureBlob
 {
@@ -10,7 +7,7 @@ namespace NEventStore.Persistence.AzureBlob
 	/// This holds the serialized data from commits
 	/// </summary>
 	[Serializable]
-	public class AzureBlobEntry
+	public class AzureBlobCommit
 	{
 		/// <summary>
 		/// The value which identifies blobEntry to which the the stream and the the commit belongs.
@@ -29,6 +26,12 @@ namespace NEventStore.Persistence.AzureBlob
 		/// </summary>
 		public int StreamRevision
 		{ get; set; }
+
+        /// <summary>
+        /// Get the Checkpoint for this blob entry
+        /// </summary>
+        public ulong CheckPoint
+        { get; set; }
 
 		/// <summary>
 		/// The value which uniquely identifies the commit within the stream.

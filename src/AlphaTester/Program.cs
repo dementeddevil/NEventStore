@@ -27,7 +27,7 @@ namespace AlphaTester
 			var startTime = DateTime.UtcNow;
 
 			var options = new ParallelOptions();
-			options.MaxDegreeOfParallelism = 2;
+			options.MaxDegreeOfParallelism = 5;
 			Parallel.For(0, num, options, (i) =>
 			{
 				Stopwatch sw = new Stopwatch();
@@ -46,7 +46,6 @@ namespace AlphaTester
 					aggy = repo.GetSimpleAggregateById(start, 0);
 					aggy.ChangeFoo(52);
 					repo.Save(aggy, Guid.NewGuid(), null);
-					//Console.WriteLine(string.Format("\t\tIt took me [{0}] ms", sw2.ElapsedMilliseconds));
 				}
 
 				Console.WriteLine(string.Format("Iteration [{0}] took me [{1}] ms", i, sw.ElapsedMilliseconds));

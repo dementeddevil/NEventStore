@@ -48,9 +48,9 @@ namespace NEventStore.Persistence.AzureBlob
         { get; private set; }
 
         /// <summary>
-        /// CheckPoint
+        /// Get the Checkpoint
         /// </summary>
-        public ulong CheckPoint
+        public ulong Checkpoint
         { get; private set; }
 
         /// <summary>
@@ -86,7 +86,7 @@ namespace NEventStore.Persistence.AzureBlob
             CommitStampUtc = commitStampUtc;
             CommitIndex = commitIndex;
             StartPage = startPage;
-            CheckPoint = checkPoint;
+            Checkpoint = checkPoint;
             IsDispatched = false;
         }
     }

@@ -30,7 +30,7 @@ namespace NEventStore.Persistence.AzureBlob
         /// <summary>
         /// Get the Checkpoint for this blob entry
         /// </summary>
-        public ulong CheckPoint
+        public ulong Checkpoint
         { get; set; }
 
 		/// <summary>

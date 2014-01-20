@@ -15,7 +15,7 @@ namespace CommonDomain.Persistence.EventStore
 
 		private readonly IStoreEvents eventStore;
 
-		private readonly IDictionary<Guid, IEventStream> streams = new Dictionary<Guid, IEventStream>();
+		private readonly IDictionary<string, IEventStream> streams = new Dictionary<string, IEventStream>();
 
 		public SagaEventStoreRepository(IStoreEvents eventStore)
 		{
@@ -30,10 +30,20 @@ namespace CommonDomain.Persistence.EventStore
 
 		public TSaga GetById<TSaga>(Guid sagaId) where TSaga : class, ISaga, new()
 		{
-			return BuildSaga<TSaga>(this.OpenStream(sagaId));
+			return GetById<TSaga>(Bucket.Default, sagaId);
+		}
+
+		public TSaga GetById<TSaga>(string bucketId, Guid sagaId) where TSaga : class, ISaga, new()
+		{
+			return BuildSaga<TSaga>(this.OpenStream(bucketId, sagaId));
 		}
 
 		public void Save(ISaga saga, Guid commitId, Action<IDictionary<string, object>> updateHeaders)
+		{
+			Save(Bucket.Default, saga, commitId, updateHeaders);
+		}
+
+		public void Save(string bucketId, ISaga saga, Guid commitId, Action<IDictionary<string, object>> updateHeaders)
 		{
 			if (saga == null)
 			{
@@ -41,7 +51,7 @@ namespace CommonDomain.Persistence.EventStore
 			}
 
 			Dictionary<string, object> headers = PrepareHeaders(saga, updateHeaders);
-			IEventStream stream = this.PrepareStream(saga, headers);
+			IEventStream stream = this.PrepareStream(bucketId, saga, headers);
 
 			Persist(stream, commitId);
 
@@ -67,24 +77,24 @@ namespace CommonDomain.Persistence.EventStore
 			}
 		}
 
-		private IEventStream OpenStream(Guid sagaId)
+		private IEventStream OpenStream(string bucketId, Guid sagaId)
 		{
 			IEventStream stream;
-			if (this.streams.TryGetValue(sagaId, out stream))
-			{
-				return stream;
-			}
+			string streamsId = bucketId + sagaId;
+
+			if (this.streams.TryGetValue(streamsId, out stream))
+			{ return stream; }
 
 			try
 			{
-				stream = this.eventStore.OpenStream(sagaId, 0, int.MaxValue);
+				stream = this.eventStore.OpenStream(bucketId, sagaId, 0, int.MaxValue);
 			}
 			catch (StreamNotFoundException)
 			{
 				stream = this.eventStore.CreateStream(sagaId);
 			}
 
-			return this.streams[sagaId] = stream;
+			return this.streams[streamsId] = stream;
 		}
 
 		private static TSaga BuildSaga<TSaga>(IEventStream stream) where TSaga : class, ISaga, new()
@@ -121,12 +131,14 @@ namespace CommonDomain.Persistence.EventStore
 			return headers;
 		}
 
-		private IEventStream PrepareStream(ISaga saga, Dictionary<string, object> headers)
+		private IEventStream PrepareStream(string bucketId, ISaga saga, Dictionary<string, object> headers)
 		{
 			IEventStream stream;
-			if (!this.streams.TryGetValue(saga.Id, out stream))
+			string streamsId = bucketId + saga.Id;
+
+			if (!this.streams.TryGetValue(streamsId, out stream))
 			{
-				this.streams[saga.Id] = stream = this.eventStore.CreateStream(saga.Id);
+				this.streams[streamsId] = stream = this.eventStore.CreateStream(saga.Id);
 			}
 
 			foreach (var item in headers)

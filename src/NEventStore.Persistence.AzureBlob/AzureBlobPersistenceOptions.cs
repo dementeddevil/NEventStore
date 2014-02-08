@@ -26,6 +26,12 @@ namespace NEventStore.Persistence.AzureBlob
 		{ get; private set; }
 
 		/// <summary>
+		/// Get the maximum timespan to look back in for undispatched commits
+		/// </summary>
+		public TimeSpan MaxTimeSpanForUndispatched
+		{ get; private set; }
+
+		/// <summary>
 		/// Get if unique checkpoints should be enforced.
 		/// </summary>
 		/// <remarks>
@@ -62,6 +68,25 @@ namespace NEventStore.Persistence.AzureBlob
 			int parallelConnectionLimit = 10,
 			int defaultStartingBlobSizeKb = 1, double blobGrowthRate = 1,
 			bool forceUniqueCheckpoint = true)
+			: this(TimeSpan.MaxValue, containerName, parallelConnectionLimit, defaultStartingBlobSizeKb, blobGrowthRate, forceUniqueCheckpoint)
+		{ }
+
+		/// <summary>
+		/// Create a new AzureBlobPersistenceOptions
+		/// </summary>
+		/// <param name="maxTimeSpanForUndispatched">maximum amount of history to go back in for looking for undispatched commits.  smaller values will imrpove performance, but increase the risk of missing a commit</param>
+		/// <param name="containerName">name of the container within the azure storage account</param>
+		/// <param name="containerType">typeof container</param>
+		/// <param name="parallelConnectionLimit">maximum parallel connection that can be made to the storage account at once</param>
+		/// <param name="defaultStartingBlobSizeKb">the starting size of a new blob that is created.  this is useful if you know the general size of your blobs.</param>
+		/// <param name="blobGrowthRate">the growth rate of the blob when it needs more space.  A value of 1 will cause the blob to grow by exactly what it requires</param>
+		/// <param name="forceUniqueCheckpoint">force unique checkpoint</param>
+		public AzureBlobPersistenceOptions(
+			TimeSpan maxTimeSpanForUndispatched,
+			string containerName = "default",
+			int parallelConnectionLimit = 10,
+			int defaultStartingBlobSizeKb = 1, double blobGrowthRate = 1,
+			bool forceUniqueCheckpoint = true)
 		{
 			if (blobGrowthRate < 1)
 			{ throw new ArgumentOutOfRangeException("blobGrowthRate", "blob growth rate must be greater than or equal to 1"); }
@@ -70,6 +95,7 @@ namespace NEventStore.Persistence.AzureBlob
 			DefaultStartingBlobSizeKb = defaultStartingBlobSizeKb;
 			ParallelConnectionLimit = parallelConnectionLimit;
 			ForceUniqueCheckpoint = forceUniqueCheckpoint;
+			MaxTimeSpanForUndispatched = maxTimeSpanForUndispatched;
 		}
 	}
 }

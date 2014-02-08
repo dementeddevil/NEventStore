@@ -263,9 +263,14 @@ namespace NEventStore.Persistence.AzureBlob
 
 			foreach (var container in containers)
 			{
+				var sinceDateUtc = DateTime.UtcNow.Subtract(_options.MaxTimeSpanForUndispatched);
+
+				// this container is fetched lazily.  so actually filtering down at this level will improve our performance,
+				// assuming the options dictate a date range that filters down our set.
 				var blobs = container
 								.ListBlobs(useFlatBlobListing: true, blobListingDetails: BlobListingDetails.Metadata)
-								.OfType<CloudPageBlob>();
+								.OfType<CloudPageBlob>().OrderByDescending((x) => x.Properties.LastModified)
+								.Where((x) => x.Properties.LastModified > sinceDateUtc);
 
 				// this could be a tremendous amount of data.  Depending on system used
 				// this may not be performant enough and may require some sort of index be built.

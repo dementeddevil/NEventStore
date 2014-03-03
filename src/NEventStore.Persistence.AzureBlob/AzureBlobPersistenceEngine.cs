@@ -263,7 +263,15 @@ namespace NEventStore.Persistence.AzureBlob
 
 			foreach (var container in containers)
 			{
-				var sinceDateUtc = DateTime.UtcNow.Subtract(_options.MaxTimeSpanForUndispatched);
+				DateTime sinceDateUtc = DateTime.MinValue;
+				try
+				{
+					// only need to subtract if something different than TimeSpan.MaxValue is specified
+					if (!_options.MaxTimeSpanForUndispatched.Equals(TimeSpan.MaxValue))
+					{ sinceDateUtc = DateTime.UtcNow.Subtract(_options.MaxTimeSpanForUndispatched); }
+				}
+				catch (ArgumentOutOfRangeException)
+				{ Logger.Info("Date Time was out of range.  falling back to the smallest date/time possible"); }
 
 				// this container is fetched lazily.  so actually filtering down at this level will improve our performance,
 				// assuming the options dictate a date range that filters down our set.
@@ -415,6 +423,9 @@ namespace NEventStore.Persistence.AzureBlob
 				startPage += commit.TotalPagesUsed;
 			}
 
+			if (attempt.CommitSequence <= header.LastCommitSequence)
+			{ throw new ConcurrencyException(); }
+
 			var blobCommit = new AzureBlobCommit();
 			blobCommit.BucketId = attempt.BucketId;
 			blobCommit.CommitId = attempt.CommitId;
@@ -433,6 +444,7 @@ namespace NEventStore.Persistence.AzureBlob
 			header.AppendPageBlobCommitDefinition(new PageBlobCommitDefinition(serializedBlobCommit.Length, attempt.CommitId, attempt.StreamRevision,
 				attempt.CommitStamp, header.PageBlobCommitDefinitions.Count, startPage, GetNextCheckpoint()));
 			++header.UndispatchedCommitCount;
+			header.LastCommitSequence = attempt.CommitSequence;
 
 			try
 			{

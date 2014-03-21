@@ -90,7 +90,11 @@ namespace NEventStore.Persistence.AcceptanceTests
         [Fact]
         public void should_correctly_persist_the_commit_stamp()
         {
-            _persisted.CommitStamp.Subtract(_now).ShouldBeLessThanOrEqualTo(TimeSpan.FromSeconds(1));
+            var difference = _persisted.CommitStamp.Subtract(_now);
+            difference.Days.ShouldBe(0);
+            difference.Hours.ShouldBe(0);
+            difference.Minutes.ShouldBe(0);
+            difference.ShouldBeLessThanOrEqualTo(TimeSpan.FromSeconds(1));
         }
 
         [Fact]
@@ -244,7 +248,6 @@ namespace NEventStore.Persistence.AcceptanceTests
 
     //TODO:This test looks exactly like the one above. What are we trying to prove?
     public class when_attempting_to_overwrite_a_committed_sequence : PersistenceEngineConcern
-
     {
         private CommitAttempt _failedAttempt;
         private Exception _thrown;
@@ -323,32 +326,33 @@ namespace NEventStore.Persistence.AcceptanceTests
 
     public class when_committing_more_events_than_the_configured_page_size : PersistenceEngineConcern
     {
-        private HashSet<Guid> _committed;
-        private ICollection<Guid> _loaded;
+        private CommitAttempt[] _committed;
+        private ICommit[] _loaded;
         private string _streamId;
 
         protected override void Context()
         {
             _streamId = Guid.NewGuid().ToString();
-            _committed = Persistence.CommitMany(ConfiguredPageSizeForTesting + 1, _streamId).Select(c => c.CommitId).ToHashSet();
+            _committed = Persistence.CommitMany(ConfiguredPageSizeForTesting + 2, _streamId).ToArray();
         }
 
         protected override void Because()
         {
-            _loaded = Persistence.GetFrom(_streamId, 0, int.MaxValue).Select(c => c.CommitId).ToList();
+            _loaded = Persistence.GetFrom(_streamId, 0, int.MaxValue).ToArray();
         }
 
         [Fact]
         public void should_load_the_same_number_of_commits_which_have_been_persisted()
         {
-            _loaded.Count.ShouldBe(_committed.Count);
+            _loaded.Length.ShouldBe(_committed.Length);
         }
 
         [Fact]
         public void should_load_the_same_commits_which_have_been_persisted()
         {
-            _committed.All(x => _loaded.Contains(x)).ShouldBeTrue();
-            // all commits should be found in loaded collection
+            _committed
+                .All(commit => _loaded.SingleOrDefault(loaded => loaded.CommitId == commit.CommitId) != null)
+                .ShouldBeTrue();
         }
     }
 
@@ -518,32 +522,37 @@ namespace NEventStore.Persistence.AcceptanceTests
 
     public class when_paging_over_all_commits_from_a_particular_point_in_time : PersistenceEngineConcern
     {
-        private HashSet<Guid> _committed;
-        private ICollection<Guid> _loaded;
+        private CommitAttempt[] _committed;
+        private ICommit[] _loaded;
         private DateTime _start;
         private Guid _streamId;
 
         protected override void Context()
         {
             _start = SystemTime.UtcNow;
-            _committed = Persistence.CommitMany(ConfiguredPageSizeForTesting + 1).Select(c => c.CommitId).ToHashSet();
+            // Due to loss in precision in various storage engines, we're rounding down to the
+            // nearest second to ensure include all commits from the 'start'.
+            _start = _start.AddSeconds(-1); 
+            _committed = Persistence.CommitMany(ConfiguredPageSizeForTesting + 2).ToArray();
         }
 
         protected override void Because()
         {
-            _loaded = Persistence.GetFrom(_start).Select(c => c.CommitId).ToList();
+            _loaded = Persistence.GetFrom(_start).ToArray();
         }
 
         [Fact]
         public void should_load_the_same_number_of_commits_which_have_been_persisted()
         {
-            _loaded.Count.ShouldBeGreaterThanOrEqualTo(_committed.Count);
+            _loaded.Length.ShouldBe(_committed.Length);
         }
 
         [Fact]
         public void should_load_the_same_commits_which_have_been_persisted()
         {
-            _committed.All(x => _loaded.Contains(x)).ShouldBeTrue(); // all commits should be found in loaded collection
+            _committed
+                .All(commit => _loaded.SingleOrDefault(loaded => loaded.CommitId == commit.CommitId) != null)
+                .ShouldBeTrue();
         }
     }
 
@@ -1041,7 +1050,7 @@ namespace NEventStore.Persistence.AcceptanceTests
 
         protected int ConfiguredPageSizeForTesting
         {
-            get { return 128; }
+            get { return 2; }
         }
 
         public void SetFixture(PersistenceEngineFixture data)

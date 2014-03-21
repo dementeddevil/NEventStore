@@ -58,7 +58,7 @@ namespace NEventStore.Persistence.Sql.SqlDialects
 
         public override string GetCommitsFromStartingRevision
         {
-            get { return AddOuterTrailingCommitSequence(LimitedQuery(OracleNativeStatements.GetCommitsFromStartingRevision)); }
+            get { return LimitedQuery(OracleNativeStatements.GetCommitsFromStartingRevision); }
         }
 
         public override string GetCommitsFromInstant
@@ -156,11 +156,6 @@ namespace NEventStore.Persistence.Sql.SqlDialects
             get { return MakeOracleParameter(base.MaxStreamRevision); }
         }
 
-        private string AddOuterTrailingCommitSequence(string query)
-        {
-            return (query.TrimEnd(new[] {';'}) + "\r\n" + OracleNativeStatements.AddCommitSequence);
-        }
-
         public override IDbStatement BuildStatement(TransactionScope scope, IDbConnection connection, IDbTransaction transaction)
         {
             return new OracleDbStatement(this, scope, connection, transaction);
@@ -188,6 +183,11 @@ namespace NEventStore.Persistence.Sql.SqlDialects
         public override bool IsDuplicate(Exception exception)
         {
             return exception.Message.Contains("ORA-00001");
+        }
+
+        public override NextPageDelegate NextPageDelegate
+        {
+            get { return (q, r) => { } ; }
         }
 
         public override void AddPayloadParamater(IConnectionFactory connectionFactory, IDbConnection connection, IDbStatement cmd, byte[] payload)

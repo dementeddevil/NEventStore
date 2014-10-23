@@ -206,8 +206,8 @@ namespace NEventStore.Persistence.AzureBlob
 					{
 						if (attempts++ > 5)
 						{
-							Logger.Fatal("Azure is giving us a consistent bounds issue with bucket id: {0}, stream id: {1}.  This may need to be looked into and may indicate corruption with the stream.", bucketId, streamId);
-							throw;
+							Logger.Error("Azure is giving us a consistent bounds issue with bucket id: {0}, stream id: {1}.  This may need to be looked into and may indicate corruption with the stream.", bucketId, streamId);
+							throw new ConcurrencyException("Issue with azure concurrency.  operation should be tried again", ex);
 						}
 						else
 						{
@@ -291,7 +291,7 @@ namespace NEventStore.Persistence.AzureBlob
 		/// <returns>A list of all undispatched commits.</returns>
 		public IEnumerable<ICommit> GetUndispatchedCommits()
 		{
-			// this is most likely extremely ineficcient as the size of our store grows to 100's of millions of streams (possibly even just 1000's)
+			// this is most likely extremely inefficient as the size of our store grows to 100's of millions of streams (possibly even just 1000's)
 			var containers = _blobClient.ListContainers();
 			var allCommitDefinitions = new List<Tuple<CloudPageBlob, PageBlobCommitDefinition>>();
 
@@ -318,13 +318,22 @@ namespace NEventStore.Persistence.AzureBlob
 				// this may not be performant enough and may require some sort of index be built.
 				foreach (var pageBlob in blobs)
 				{
-					var header = GetHeader(pageBlob);
-					if (header.UndispatchedCommitCount > 0)
-					{
-						foreach (var definition in header.PageBlobCommitDefinitions)
+					// we only care about guys who may be dirty
+					bool isDirty = true;
+					string isDirtyString;
+					if (pageBlob.Metadata.TryGetValue(_dirtyFlagKey, out isDirtyString))
+					{ isDirty = Boolean.Parse(isDirtyString); }
+					
+					if (isDirty)
+					{ 
+						var header = GetHeader(pageBlob);
+						if (header.UndispatchedCommitCount > 0)
 						{
-							if (!definition.IsDispatched)
-							{ allCommitDefinitions.Add(new Tuple<CloudPageBlob, PageBlobCommitDefinition>(pageBlob, definition)); }
+							foreach (var definition in header.PageBlobCommitDefinitions)
+							{
+								if (!definition.IsDispatched)
+								{ allCommitDefinitions.Add(new Tuple<CloudPageBlob, PageBlobCommitDefinition>(pageBlob, definition)); }
+							}
 						}
 					}
 				}
@@ -619,6 +628,9 @@ namespace NEventStore.Persistence.AzureBlob
 		{
 			try
 			{
+				blob.Metadata[_dirtyFlagKey] = header.PageBlobCommitDefinitions.Any((x) => !x.IsDispatched).ToString();
+				blob.SetMetadata(AccessCondition.GenerateIfMatchCondition(blob.Properties.ETag));
+
 				var serialized = _serializer.Serialize(header);
 				var headerSizeBytes = BitConverter.GetBytes(serialized.Length);
 				var nonAlignedCommitLength = serialized.Length + headerSizeBytes.Length;

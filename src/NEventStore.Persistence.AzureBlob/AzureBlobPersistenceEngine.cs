@@ -204,7 +204,10 @@ namespace NEventStore.Persistence.AzureBlob
 							throw;
 						}
 						else
-						{ Logger.Info("Azure notified us of out of bounds issue.  Occurs occasionally when operating very quickly on single stream.  Storage engine will retry automatically"); }
+						{
+							Logger.Info("Azure notified us of out of bounds issue.  Occurs occasionally when operating very quickly on single stream.  Storage engine will retry automatically");
+							Thread.Sleep(10);
+						}
 					}
 					else
 					{ throw; }

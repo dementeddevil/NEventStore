@@ -20,7 +20,7 @@ namespace AlphaTester
 				{ repoType = eRepositoryType.Sql; }
 			}
 
-			var num = 10;
+			var num = 100;
 			if (args.Length > 1)
 			{ num = Convert.ToInt32(args[1]); }
 
@@ -55,7 +55,7 @@ namespace AlphaTester
 						//Console.WriteLine("success {0}", thisIter);
 					}
 					catch (Exception ex)
-					{ Console.WriteLine("error {0} - {1}", thisIter, ex.Message); }
+					{ Console.WriteLine("error iteration {0}, {1} - {2}", i, thisIter, ex.ToString()); }
 				});
 
 				Console.WriteLine(string.Format("Iteration [{0}] took me [{1}] ms", i, sw.ElapsedMilliseconds));

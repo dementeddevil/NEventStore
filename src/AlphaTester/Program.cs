@@ -20,7 +20,7 @@ namespace AlphaTester
 				{ repoType = eRepositoryType.Sql; }
 			}
 
-			var num = 100;
+			var num = 1;
 			if (args.Length > 1)
 			{ num = Convert.ToInt32(args[1]); }
 
@@ -40,7 +40,7 @@ namespace AlphaTester
 				repo.Save(aggy, Guid.NewGuid(), null);
 
 				Random random = new Random();
-				Parallel.For(0, 50, options, (j) =>
+				Parallel.For(0, 5, options, (j) =>
 				{
 					var thisIter = random.Next();
 

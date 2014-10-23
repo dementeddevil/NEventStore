@@ -24,8 +24,15 @@ namespace AlphaTester
 			if (args.Length > 1)
 			{ num = Convert.ToInt32(args[1]); }
 
-			Console.WriteLine(string.Format("using [{0}] storage", repoType));
 			var startTime = DateTime.UtcNow;
+			Console.WriteLine("Initializing [{0}] Repository", repoType);
+			var initSw = new Stopwatch();
+			initSw.Start();
+			var repoInit = new TestRepository(repoType);
+			var dontCare = repoInit.GetSimpleAggregateById(Guid.NewGuid(), Int32.MaxValue);
+			initSw.Stop();
+			Console.WriteLine("Took {0} to init", initSw.Elapsed.ToString());
+
 
 			var options = new ParallelOptions();
 			options.MaxDegreeOfParallelism = 10;
@@ -35,27 +42,33 @@ namespace AlphaTester
 				sw.Start();
 				Guid start = Guid.NewGuid();
 
-				TestRepository repo = new TestRepository(repoType);
+				var repo = new TestRepository(repoType);
 				var aggy = SimpleAggregate.CreateNew(DateTime.Now, start, 42);
 				repo.Save(aggy, Guid.NewGuid(), null);
 
 				Random random = new Random();
-				Parallel.For(0, 5, options, (j) =>
+				Parallel.For(0, 100, options, (j) =>
 				{
-					var thisIter = random.Next();
+					var swInner = new Stopwatch();
+					swInner.Start();
 
 					try
 					{
-						//Console.WriteLine("starting {0}", thisIter);
+						//Console.WriteLine("starting {0}-{1}", i, j);
 						repo = new TestRepository(repoType);
 						aggy = repo.GetSimpleAggregateById(start, 0);
 						aggy.ChangeFoo(52);
 						//Thread.Sleep(random.Next(100, 400));	// this is to increase race condition likelyhood
 						repo.Save(aggy, Guid.NewGuid(), null);
-						//Console.WriteLine("success {0}", thisIter);
+						//Console.WriteLine("starting {0}-{1}", i, j);
 					}
 					catch (Exception ex)
-					{ Console.WriteLine("error iteration {0}, {1} - {2}", i, thisIter, ex.ToString()); }
+					{ Console.WriteLine("error iteration {0}-{1}, {2}", i, j, ex.ToString()); }
+					finally
+					{
+						swInner.Stop();
+						Console.WriteLine("Iteration [{0}] Took [{1}]", j, swInner.Elapsed);
+					}
 				});
 
 				Console.WriteLine(string.Format("Iteration [{0}] took me [{1}] ms", i, sw.ElapsedMilliseconds));

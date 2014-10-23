@@ -24,13 +24,14 @@ namespace NEventStore.Persistence.AzureBlob
 		// number of 512 byte aligned pages for header data.
 		// The larger this is, the more streams we can support,
 		// but the higher cost we will pay in initializing the stream.
-		private const int _headerPages = 1024;
+		private const int _headerPages = 128;
 		private const int _headerBaseSizeInbytes = _headerPages * 512;
 
 		private const string _eventSourcePrefix = "evsrc";
 		private const string _rootContainerName = "$root";
 		private const string _checkpointBlobName = "checkpoint";
 		private const string _checkpointNumberKey = "checkpointnumber";
+		private const string _dirtyFlagKey = "isDirty";
 
 		private readonly ISerialize _serializer;
 		private readonly AzureBlobPersistenceOptions _options;
@@ -203,7 +204,7 @@ namespace NEventStore.Persistence.AzureBlob
 				{
 					if (ex.Message.Contains("416"))
 					{
-						if (attempts++ > 100)
+						if (attempts++ > 5)
 						{
 							Logger.Fatal("Azure is giving us a consistent bounds issue with bucket id: {0}, stream id: {1}.  This may need to be looked into and may indicate corruption with the stream.", bucketId, streamId);
 							throw;
@@ -231,7 +232,7 @@ namespace NEventStore.Persistence.AzureBlob
 
 				// find out how many pages we are reading
 				int startPage = _headerPages;
-				int endPage = 0;
+				int endPage = startPage;
 				int startIndex = 0;
 				int numberOfCommits = 0;
 				foreach (var commitDefinition in header.PageBlobCommitDefinitions)
@@ -476,7 +477,7 @@ namespace NEventStore.Persistence.AzureBlob
 				{
 					// if the header write fails, we will throw out.  the application will need to try again.  it will be as if
 					// this commit never succeeded.  we need to also autogrow the page blob if we are going to exceed its max.
-					var bytesRequired = startPage * 512 + ms.Length + _headerBaseSizeInbytes;
+					var bytesRequired = startPage * 512 + ms.Length;
 					if (pageBlobReference.Properties.Length < bytesRequired)
 					{
 						var currentSize = pageBlobReference.Properties.Length;
@@ -488,7 +489,7 @@ namespace NEventStore.Persistence.AzureBlob
 						pageBlobReference.Resize(newSize, AccessCondition.GenerateIfMatchCondition(pageBlobReference.Properties.ETag));
 					}
 
-					pageBlobReference.WritePages(ms, startPage * 512 + _headerBaseSizeInbytes, accessCondition: AccessCondition.GenerateIfMatchCondition(pageBlobReference.Properties.ETag));
+					pageBlobReference.WritePages(ms, startPage * 512, accessCondition: AccessCondition.GenerateIfMatchCondition(pageBlobReference.Properties.ETag));
 					CommitHeader(pageBlobReference, header);
 				}
 			}

@@ -11,7 +11,7 @@ namespace AlphaTester
 {
 	class Program
 	{
-		static void Main( string[] args )
+		static void Main(string[] args)
 		{
 			var repoType = eRepositoryType.AzureBlob;
 			if (args.Length > 0)
@@ -20,7 +20,7 @@ namespace AlphaTester
 				{ repoType = eRepositoryType.Sql; }
 			}
 
-			var num = 1000;
+			var num = 100;
 			if (args.Length > 1)
 			{ num = Convert.ToInt32(args[1]); }
 
@@ -47,7 +47,8 @@ namespace AlphaTester
 				repo.Save(aggy, Guid.NewGuid(), null);
 
 				Random random = new Random();
-				Parallel.For(0, 2, options, (j) =>
+				for (int j = 0; j != 10; ++j)
+				//Parallel.For(0, 1, options, (j) =>
 				{
 					var swInner = new Stopwatch();
 					swInner.Start();
@@ -69,7 +70,7 @@ namespace AlphaTester
 						swInner.Stop();
 						Console.WriteLine("Iteration [{0}] Took [{1}]", j, swInner.Elapsed);
 					}
-				});
+				}//);
 
 				Console.WriteLine(string.Format("Iteration [{0}] took me [{1}] ms", i, sw.ElapsedMilliseconds));
 			});

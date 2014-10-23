@@ -21,17 +21,12 @@ namespace NEventStore.Persistence.AzureBlob
 		private static readonly ILog Logger = LogFactory.BuildLogger(typeof(AzureBlobPersistenceEngine));
 		private static int _connectionLimitSet;
 
-		// number of 512 byte aligned pages for header data.
-		// The larger this is, the more streams we can support,
-		// but the higher cost we will pay in initializing the stream.
-		private const int _headerPages = 128;
-		private const int _headerBaseSizeInbytes = _headerPages * 512;
-
 		private const string _eventSourcePrefix = "evsrc";
 		private const string _rootContainerName = "$root";
 		private const string _checkpointBlobName = "checkpoint";
 		private const string _checkpointNumberKey = "checkpointnumber";
-		private const string _dirtyFlagKey = "isDirty";
+		private const string _hasUndispatchedCommitsKey = "hasUndispatchedCommits";
+		private const string _isEventStreamAggregateKey = "isEventStreamAggregate";
 
 		private readonly ISerialize _serializer;
 		private readonly AzureBlobPersistenceOptions _options;
@@ -140,7 +135,7 @@ namespace NEventStore.Persistence.AzureBlob
 				// this may not be performant enough and may require some sort of index be built.
 				foreach (var pageBlob in blobs)
 				{
-					var header = GetHeader(pageBlob);
+					var header = GetHeader(pageBlob, null);
 					foreach (var definition in header.PageBlobCommitDefinitions)
 					{ allCommitDefinitions.Add(new Tuple<CloudPageBlob, PageBlobCommitDefinition>(pageBlob, definition)); }
 				}
@@ -171,7 +166,7 @@ namespace NEventStore.Persistence.AzureBlob
 			var allCommitDefinitions = new List<Tuple<CloudPageBlob, PageBlobCommitDefinition>>();
 			foreach (var pageBlob in blobs)
 			{
-				var header = GetHeader(pageBlob);
+				var header = GetHeader(pageBlob, null);
 				foreach (var definition in header.PageBlobCommitDefinitions)
 				{
 					if (definition.CommitStampUtc >= start && definition.CommitStampUtc <= end)
@@ -228,10 +223,10 @@ namespace NEventStore.Persistence.AzureBlob
 			try
 			{
 				pageBlobReference.FetchAttributes();
-				var header = GetHeader(pageBlobReference);
+				var header = GetHeader(pageBlobReference, null);
 
 				// find out how many pages we are reading
-				int startPage = _headerPages;
+				int startPage = 0;
 				int endPage = startPage;
 				int startIndex = 0;
 				int numberOfCommits = 0;
@@ -318,21 +313,24 @@ namespace NEventStore.Persistence.AzureBlob
 				// this may not be performant enough and may require some sort of index be built.
 				foreach (var pageBlob in blobs)
 				{
-					// we only care about guys who may be dirty
-					bool isDirty = true;
-					string isDirtyString;
-					if (pageBlob.Metadata.TryGetValue(_dirtyFlagKey, out isDirtyString))
-					{ isDirty = Boolean.Parse(isDirtyString); }
-					
-					if (isDirty)
-					{ 
-						var header = GetHeader(pageBlob);
-						if (header.UndispatchedCommitCount > 0)
+					if (pageBlob.Metadata.ContainsKey(_isEventStreamAggregateKey))
+					{
+						// we only care about guys who may be dirty
+						bool isDirty = true;
+						string isDirtyString;
+						if (pageBlob.Metadata.TryGetValue(_hasUndispatchedCommitsKey, out isDirtyString))
+						{ isDirty = Boolean.Parse(isDirtyString); }
+
+						if (isDirty)
 						{
-							foreach (var definition in header.PageBlobCommitDefinitions)
+							var header = GetHeader(pageBlob, null);
+							if (header.UndispatchedCommitCount > 0)
 							{
-								if (!definition.IsDispatched)
-								{ allCommitDefinitions.Add(new Tuple<CloudPageBlob, PageBlobCommitDefinition>(pageBlob, definition)); }
+								foreach (var definition in header.PageBlobCommitDefinitions)
+								{
+									if (!definition.IsDispatched)
+									{ allCommitDefinitions.Add(new Tuple<CloudPageBlob, PageBlobCommitDefinition>(pageBlob, definition)); }
+								}
 							}
 						}
 					}
@@ -357,7 +355,9 @@ namespace NEventStore.Persistence.AzureBlob
 			{
 				pageBlobReference.FetchAttributes();
 				string eTag = pageBlobReference.Properties.ETag;
-				var header = GetHeader(pageBlobReference);
+
+				var headerDefinitionMetadata = GetHeaderDefinitionMetadata(pageBlobReference);
+				var header = GetHeader(pageBlobReference, headerDefinitionMetadata);
 
 				// we must commit at a page offset, we will just track how many pages in we must start writing at
 				foreach (var commitDefinition in header.PageBlobCommitDefinitions)
@@ -369,7 +369,7 @@ namespace NEventStore.Persistence.AzureBlob
 					}
 				}
 
-				CommitHeader(pageBlobReference, header);
+				CommitNewMessage(pageBlobReference, null, header, headerDefinitionMetadata.HeaderStartLocationOffsetBytes);
 			}
 			catch (Microsoft.WindowsAzure.Storage.StorageException ex)
 			{
@@ -445,10 +445,10 @@ namespace NEventStore.Persistence.AzureBlob
 		{
 			var pageBlobReference = _blobContainer.GetPageBlobReference(attempt.BucketId.ToLower() + "/" + attempt.StreamId);
 			CreateIfNotExistsAndFetchAttributes(pageBlobReference);
-			var header = GetHeader(pageBlobReference);
+			var header = GetHeader(pageBlobReference, null);
 
 			// we must commit at a page offset, we will just track how many pages in we must start writing at
-			var startPage = _headerPages;
+			var startPage = 0;
 			foreach (var commit in header.PageBlobCommitDefinitions)
 			{
 				if (commit.CommitId == attempt.CommitId)
@@ -471,8 +471,7 @@ namespace NEventStore.Persistence.AzureBlob
 			blobCommit.StreamRevision = attempt.StreamRevision;
 			var serializedBlobCommit = _serializer.Serialize(blobCommit);
 
-			var remainder = serializedBlobCommit.Length % 512;
-			var pageAlignedBlobCommit = new byte[serializedBlobCommit.Length + (512 - remainder)];
+			var pageAlignedBlobCommit = new byte[GetPageAlignedSize(serializedBlobCommit.Length)];
 			Array.Copy(serializedBlobCommit, pageAlignedBlobCommit, serializedBlobCommit.Length);
 
 			header.AppendPageBlobCommitDefinition(new PageBlobCommitDefinition(serializedBlobCommit.Length, attempt.CommitId, attempt.StreamRevision,
@@ -480,35 +479,7 @@ namespace NEventStore.Persistence.AzureBlob
 			++header.UndispatchedCommitCount;
 			header.LastCommitSequence = attempt.CommitSequence;
 
-			try
-			{
-				using (var ms = new MemoryStream(pageAlignedBlobCommit))
-				{
-					// if the header write fails, we will throw out.  the application will need to try again.  it will be as if
-					// this commit never succeeded.  we need to also autogrow the page blob if we are going to exceed its max.
-					var bytesRequired = startPage * 512 + ms.Length;
-					if (pageBlobReference.Properties.Length < bytesRequired)
-					{
-						var currentSize = pageBlobReference.Properties.Length;
-						var newSize = Math.Max((long)(currentSize * _options.BlobGrowthRatePercent), bytesRequired);
-						var remainder2 = newSize % 512;
-						if (remainder2 != 0)
-						{ newSize = newSize + 512 - remainder2; }
-
-						pageBlobReference.Resize(newSize, AccessCondition.GenerateIfMatchCondition(pageBlobReference.Properties.ETag));
-					}
-
-					pageBlobReference.WritePages(ms, startPage * 512, accessCondition: AccessCondition.GenerateIfMatchCondition(pageBlobReference.Properties.ETag));
-					CommitHeader(pageBlobReference, header);
-				}
-			}
-			catch (Microsoft.WindowsAzure.Storage.StorageException ex)
-			{
-				if (ex.Message.Contains("412"))
-				{ throw new ConcurrencyException(); }
-				throw;
-			}
-
+			CommitNewMessage(pageBlobReference, serializedBlobCommit, header, startPage * _blobPageSize);
 			return CreateCommitFromAzureBlobCommit(blobCommit);
 		}
 
@@ -549,7 +520,7 @@ namespace NEventStore.Persistence.AzureBlob
 		/// <returns></returns>
 		private ICommit CreateCommitFromDefinition(CloudPageBlob blob, PageBlobCommitDefinition commitDefinition)
 		{
-			var header = GetHeader(blob);
+			var header = GetHeader(blob, null);
 						
 			using (var ms = new MemoryStream(commitDefinition.DataSizeBytes))
 			{
@@ -589,58 +560,118 @@ namespace NEventStore.Persistence.AzureBlob
 								blobEntry.Events);
 		}
 
+		private const int _blobPageSize = 512;
+		private const int _headerDefinitionMetadataPages = (HeaderDefinitionMetadata.RawSize / _blobPageSize) + 1;
+		private const int _headerDefinitionMetadataBytes = _headerDefinitionMetadataPages * _blobPageSize;
+		private static byte[] _maxFillSpace = new byte[1024];
+
+		private HeaderDefinitionMetadata GetHeaderDefinitionMetadata(CloudPageBlob blob)
+		{
+			var headerDefinitionMetaDataOffset = blob.Properties.Length - _headerDefinitionMetadataBytes;
+			using (var ms = new MemoryStream(HeaderDefinitionMetadata.RawSize))
+			{
+				blob.DownloadRangeToStream(ms, headerDefinitionMetaDataOffset, HeaderDefinitionMetadata.RawSize);
+				return HeaderDefinitionMetadata.FromRaw(ms.ToArray());
+			}
+		}
+
 		/// <summary>
 		/// Gets the deserialized header from the blob.
 		/// </summary>
 		/// <param name="blob">The Blob.</param>
 		/// <returns>A populated StreamBlobHeader.</returns>
-		private StreamBlobHeader GetHeader(CloudPageBlob blob)
+		private StreamBlobHeader GetHeader(CloudPageBlob blob, HeaderDefinitionMetadata prefetched)
 		{
-			// the header is stored in the first set of bytes
-			using (var ms = new MemoryStream(_headerBaseSizeInbytes))
+			var headerDefinitionMetadata = prefetched ?? GetHeaderDefinitionMetadata(blob);
+			if (headerDefinitionMetadata.HeaderSizeInBytes != 0)
 			{
-				blob.DownloadRangeToStream(ms, 0, _headerBaseSizeInbytes);
-				ms.Position = 0;
-
-				var headerSizeBytes = new byte[4];
-				ms.Read(headerSizeBytes, 0, headerSizeBytes.Length);
-				var headerSize = BitConverter.ToInt32(headerSizeBytes, 0);
-
-				if (headerSize != 0)
+				using (var ms = new MemoryStream(headerDefinitionMetadata.HeaderSizeInBytes))
 				{
-					var headerBytes = new byte[headerSize];
-					ms.Read(headerBytes, 0, headerBytes.Length);
-					return _serializer.Deserialize<StreamBlobHeader>(headerBytes);
+					blob.DownloadRangeToStream(ms, headerDefinitionMetadata.HeaderStartLocationOffsetBytes, headerDefinitionMetadata.HeaderSizeInBytes);
+					return _serializer.Deserialize<StreamBlobHeader>(ms.ToArray());
 				}
-				else
-				{ return new StreamBlobHeader(); }
 			}
+			else
+			{ return new StreamBlobHeader(); }
+		}
+
+		/// <summary>
+		/// Get page aligned number of bytes from a non page aligned number
+		/// </summary>
+		/// <param name="nonAligned"></param>
+		/// <returns></returns>
+		private int GetPageAlignedSize(int nonAligned)
+		{
+			var remainder = nonAligned % _blobPageSize;
+			return (remainder == 0) ? nonAligned : nonAligned + (_blobPageSize - remainder);
+			
+		}
+
+		/// <summary>
+		/// Resized the blob to a specific size
+		/// </summary>
+		/// <param name="blob"></param>
+		/// <param name="neededSize"></param>
+		private void ResizeBlob(CloudPageBlob blob, int neededSize)
+		{
+			var currentSize = blob.Properties.Length;
+			var newSize = Math.Max((int)(currentSize * _options.BlobGrowthRatePercent), neededSize);
+			newSize = GetPageAlignedSize(newSize);
+			blob.Resize(newSize, AccessCondition.GenerateIfMatchCondition(blob.Properties.ETag));
 		}
 
 		/// <summary>
 		/// Commits the header information which essentially commits any transactions that occured
 		/// related to that header.
 		/// </summary>
+		/// <param name="newCommit">the new commit to write</param>
+		/// <param name="headerStartOffsetBytes">where in the blob the new commit will be written</param>
 		/// <param name="blob">blob header applies to</param>
 		/// <param name="header">the new header data</param>
 		/// <returns></returns>
-		private void CommitHeader(CloudPageBlob blob, StreamBlobHeader header)
+		private void CommitNewMessage(CloudPageBlob blob, byte[] newCommit, StreamBlobHeader header, int offsetBytes)
 		{
 			try
 			{
-				blob.Metadata[_dirtyFlagKey] = header.PageBlobCommitDefinitions.Any((x) => !x.IsDispatched).ToString();
+				newCommit = newCommit ?? new byte[0];
+
+				blob.Metadata[_isEventStreamAggregateKey] = "yes";
+				blob.Metadata[_hasUndispatchedCommitsKey] = header.PageBlobCommitDefinitions.Any((x) => !x.IsDispatched).ToString();
 				blob.SetMetadata(AccessCondition.GenerateIfMatchCondition(blob.Properties.ETag));
 
 				var serialized = _serializer.Serialize(header);
-				var headerSizeBytes = BitConverter.GetBytes(serialized.Length);
-				var nonAlignedCommitLength = serialized.Length + headerSizeBytes.Length;
+				var writeStartLocationAligned = GetPageAlignedSize(offsetBytes);
+				var totalSpaceNeededAligned = GetPageAlignedSize(writeStartLocationAligned + newCommit.Length + serialized.Length + _headerDefinitionMetadataBytes);
 
-				var remainder = nonAlignedCommitLength % 512;
-				var pageAlignedBlobCommit = new byte[nonAlignedCommitLength + (512 - remainder)];
-				Array.Copy(headerSizeBytes, pageAlignedBlobCommit, headerSizeBytes.Length);
-				Array.Copy(serialized, 0, pageAlignedBlobCommit, headerSizeBytes.Length, serialized.Length);
-				using (var ms = new MemoryStream(pageAlignedBlobCommit, false))
-				{ blob.WritePages(ms, 0, accessCondition: AccessCondition.GenerateIfMatchCondition(blob.Properties.ETag)); }
+				var totalBlobLength = blob.Properties.Length;
+				if (totalBlobLength < totalSpaceNeededAligned)
+				{
+					ResizeBlob(blob, totalSpaceNeededAligned);
+					totalBlobLength = blob.Properties.Length;
+				}
+
+				var writeSize = totalBlobLength - writeStartLocationAligned;
+				using (var ms = new MemoryStream((int)writeSize))
+				{
+					ms.Write(newCommit, 0, newCommit.Length);
+					ms.Write(serialized, 0, serialized.Length);
+
+					var remainder = (ms.Position % _blobPageSize);
+					var fillSpace = writeSize - newCommit.Length - serialized.Length - _headerDefinitionMetadataBytes;
+					ms.Write(_maxFillSpace, 0, (int)fillSpace);
+
+					var headerDefinitionMetadata = new HeaderDefinitionMetadata();
+					headerDefinitionMetadata.HasUndispatchedCommits = header.PageBlobCommitDefinitions.Any((x) => !x.IsDispatched);
+					headerDefinitionMetadata.HeaderSizeInBytes = serialized.Length;
+					headerDefinitionMetadata.HeaderStartLocationOffsetBytes = writeStartLocationAligned + newCommit.Length;
+					var rawHeaderDefinitionMetadata = headerDefinitionMetadata.GetRaw();
+					ms.Write(rawHeaderDefinitionMetadata, 0, rawHeaderDefinitionMetadata.Length);
+					fillSpace = _headerDefinitionMetadataBytes - rawHeaderDefinitionMetadata.Length;
+					ms.Write(_maxFillSpace, 0, (int)fillSpace);
+
+					ms.Position = 0;
+					blob.WritePages(ms, writeStartLocationAligned, accessCondition: AccessCondition.GenerateIfMatchCondition(blob.Properties.ETag));
+				}
 			}
 			catch (Microsoft.WindowsAzure.Storage.StorageException ex)
 			{

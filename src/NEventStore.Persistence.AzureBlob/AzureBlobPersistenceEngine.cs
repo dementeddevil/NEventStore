@@ -189,6 +189,31 @@ namespace NEventStore.Persistence.AzureBlob
 		/// <returns></returns>
 		public IEnumerable<ICommit> GetFrom(string bucketId, string streamId, int minRevision, int maxRevision)
 		{
+			int attempts = 0;
+			while (true)
+			{
+				try
+				{ return GetFromInternal(bucketId, streamId, minRevision, maxRevision); }
+				catch (Microsoft.WindowsAzure.Storage.StorageException ex)
+				{
+					if (ex.Message.Contains("416"))
+					{
+						if (attempts++ > 100)
+						{
+							Logger.Fatal("Azure is giving us a consistent bounds issue with bucket id: {0}, stream id: {1}.  This may need to be looked into and may indicate corruption with the stream.", bucketId, streamId);
+							throw;
+						}
+						else
+						{ Logger.Info("Azure notified us of out of bounds issue.  Occurs occasionally when operating very quickly on single stream.  Storage engine will retry automatically"); }
+					}
+					else
+					{ throw; }
+				}
+			}
+		}
+
+		private IEnumerable<ICommit> GetFromInternal(string bucketId, string streamId, int minRevision, int maxRevision)
+		{
 			var commits = new List<ICommit>();
 			var pageBlobReference = _blobContainer.GetPageBlobReference(bucketId + "/" + streamId);
 			try

@@ -92,7 +92,7 @@ namespace AlphaTester
 		{
 
 			//var connectionString = "DefaultEndpointsProtocol=https;AccountName=bobafett;AccountKey=nOaTY+Pds2LQGm/2mW5nhi5WP4cYmip6Rg1RYHgZRhN3IbzDAfRugMafA0cqjQ49cVtd309F8+Dz9hGMH6iCuQ==";
-			var connectionString = "DefaultEndpointsProtocol=https;AccountName=estesting;AccountKey=XNrCh9YAP+JsTXvXxDN8ZLuUPnUZD3pAzOzpPrPoT7Y2dI8pPLEcDMD94uPaaOeGhN8dtq790FjN7mFdOdpsuw==";       // evans
+			var connectionString = "DefaultEndpointsProtocol=https;AccountName=devtesting22;AccountKey=rbjoU5Au59V3JtHjs77hZWizhmUsadetfFTGi1L212itId3GS4Igdgq1P3Wdcr+Ojvwp06UiSheQSxdQiAlmQw==";       // evans
 			var blobOptions = new AzureBlobPersistenceOptions( "alphatester", blobGrowthRate: 1, defaultStartingBlobSizeKb: 5, forceUniqueCheckpoint: false );
 			var eventStore = new byte[] { 80, 94, 86, 128, 97, 74, 65, 94, 91, 126, 62, 52, 129, 114, 86, 107 };
 			return wireup

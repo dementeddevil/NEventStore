@@ -5,6 +5,7 @@ using System.Diagnostics;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using System.Threading;
 
 namespace AlphaTester
 {
@@ -27,7 +28,7 @@ namespace AlphaTester
 			var startTime = DateTime.UtcNow;
 
 			var options = new ParallelOptions();
-			options.MaxDegreeOfParallelism = 5;
+			options.MaxDegreeOfParallelism = 10;
 			Parallel.For(0, num, options, (i) =>
 			{
 				Stopwatch sw = new Stopwatch();
@@ -38,15 +39,24 @@ namespace AlphaTester
 				var aggy = SimpleAggregate.CreateNew(DateTime.Now, start, 42);
 				repo.Save(aggy, Guid.NewGuid(), null);
 
-				var sw2 = new Stopwatch();
-				for (int j = 0; j <= 20; ++j)
+				Random random = new Random();
+				Parallel.For(0, 50, options, (j) =>
 				{
-					sw2.Restart();
-					repo = new TestRepository(repoType);
-					aggy = repo.GetSimpleAggregateById(start, 0);
-					aggy.ChangeFoo(52);
-					repo.Save(aggy, Guid.NewGuid(), null);
-				}
+					var thisIter = random.Next();
+
+					try
+					{
+						//Console.WriteLine("starting {0}", thisIter);
+						repo = new TestRepository(repoType);
+						aggy = repo.GetSimpleAggregateById(start, 0);
+						aggy.ChangeFoo(52);
+						//Thread.Sleep(random.Next(100, 400));	// this is to increase race condition likelyhood
+						repo.Save(aggy, Guid.NewGuid(), null);
+						//Console.WriteLine("success {0}", thisIter);
+					}
+					catch (Exception ex)
+					{ Console.WriteLine("error {0} - {1}", thisIter, ex.Message); }
+				});
 
 				Console.WriteLine(string.Format("Iteration [{0}] took me [{1}] ms", i, sw.ElapsedMilliseconds));
 			});

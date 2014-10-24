@@ -49,6 +49,7 @@ namespace AlphaTester
 				{
 					if ( storeEventsInstance == null )
 					{
+						NEventStore.Logging.LogFactory.BuildLogger = (x) => new NLogLogger(x);
 						var wireup = Wireup.Init();
 
 						if (_repositoryType == eRepositoryType.AzureBlob)

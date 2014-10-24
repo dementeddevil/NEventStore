@@ -359,10 +359,6 @@ namespace NEventStore.Persistence.AzureBlob
 				string eTag = pageBlobReference.Properties.ETag;
 
 				var headerDefinitionMetadata = GetHeaderDefinitionMetadata(pageBlobReference);
-				if (headerDefinitionMetadata.HeaderSizeInBytes < 0 || headerDefinitionMetadata.HeaderSizeInBytes > 100000)
-				{
-					Console.WriteLine("Bad fetch of header metadata");
-				}
 				var header = GetHeader(pageBlobReference, headerDefinitionMetadata);
 
 				// we must commit at a page offset, we will just track how many pages in we must start writing at
@@ -449,7 +445,6 @@ namespace NEventStore.Persistence.AzureBlob
 		/// <returns>An Commit if successful.</returns>
 		public ICommit Commit(CommitAttempt attempt)
 		{
-			Console.WriteLine("Entering Commit - id: {0}", attempt.CommitId);
 			var pageBlobReference = _blobContainer.GetPageBlobReference(attempt.BucketId.ToLower() + "/" + attempt.StreamId);
 			CreateIfNotExistsAndFetchAttributes(pageBlobReference);
 			var header = GetHeader(pageBlobReference, null);
@@ -483,9 +478,7 @@ namespace NEventStore.Persistence.AzureBlob
 			++header.UndispatchedCommitCount;
 			header.LastCommitSequence = attempt.CommitSequence;
 
-			Console.WriteLine("In Commit before CNM - id: {0}", attempt.CommitId);
 			CommitNewMessage(pageBlobReference, serializedBlobCommit, header, startPage * _blobPageSize);
-			Console.WriteLine("Exiting Commit after CNM - id: {0}", attempt.CommitId);
 			return CreateCommitFromAzureBlobCommit(blobCommit);
 		}
 
@@ -527,7 +520,7 @@ namespace NEventStore.Persistence.AzureBlob
 		private ICommit CreateCommitFromDefinition(CloudPageBlob blob, PageBlobCommitDefinition commitDefinition)
 		{
 			var header = GetHeader(blob, null);
-						
+
 			using (var ms = new MemoryStream(commitDefinition.DataSizeBytes))
 			{
 				var startIndex = commitDefinition.StartPage * 512;
@@ -555,7 +548,7 @@ namespace NEventStore.Persistence.AzureBlob
 		/// <returns>The populated Commit.</returns>
 		private ICommit CreateCommitFromAzureBlobCommit(AzureBlobCommit blobEntry)
 		{
-			return new Commit(  blobEntry.BucketId,
+			return new Commit(blobEntry.BucketId,
 								blobEntry.StreamId,
 								blobEntry.StreamRevision,
 								blobEntry.CommitId,
@@ -576,17 +569,13 @@ namespace NEventStore.Persistence.AzureBlob
 			var headerDefinitionMetaDataOffset = blob.Properties.Length - _headerDefinitionMetadataBytes;
 			using (var ms = new MemoryStream(HeaderDefinitionMetadata.RawSize))
 			{
-				try { 
+				try
+				{
 					blob.DownloadRangeToStream(ms, headerDefinitionMetaDataOffset, HeaderDefinitionMetadata.RawSize, AccessCondition.GenerateIfMatchCondition(blob.Properties.ETag));
 					return HeaderDefinitionMetadata.FromRaw(ms.ToArray());
 				}
 				catch (Microsoft.WindowsAzure.Storage.StorageException ex)
-				{
-					if (ex.Message.Contains("412"))
-					{ throw new ConcurrencyException("Concurrency exception in GetHeader", ex); }
-					else
-					{ throw; }
-				}
+				{ throw HandleAndRemapCommonExceptions(ex); }
 			}
 		}
 
@@ -667,7 +656,6 @@ namespace NEventStore.Persistence.AzureBlob
 		{
 			try
 			{
-				Console.WriteLine("In commitnewmessage - id: {0}", header.PageBlobCommitDefinitions.Last().CommitId);
 				newCommit = newCommit ?? new byte[0];
 
 				blob.Metadata[_isEventStreamAggregateKey] = "yes";
@@ -710,7 +698,6 @@ namespace NEventStore.Persistence.AzureBlob
 			}
 			catch (Microsoft.WindowsAzure.Storage.StorageException ex)
 			{
-				Console.WriteLine("Caught exception in CNM - id: {0}", header.PageBlobCommitDefinitions.Last().CommitId);
 				if (ex.Message.Contains("412"))
 				{ throw new ConcurrencyException("Concurrency exception in CommitNewMessage", ex); }
 				else

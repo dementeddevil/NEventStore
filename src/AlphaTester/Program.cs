@@ -34,7 +34,7 @@ namespace AlphaTester
 
 			var options = new ParallelOptions();
 			options.MaxDegreeOfParallelism = 10;
-			var eventNum = 9;
+			var eventNum = 150;
 			Guid start = Guid.NewGuid();
 			Parallel.For(0, num, options, (i) =>
 			{
@@ -50,18 +50,11 @@ namespace AlphaTester
 				//for (int j = 0; j != 10; ++j)
 				Parallel.For(0, eventNum, options, (j) =>
 				{
-					var swInner = new Stopwatch();
-					swInner.Start();
-
 					try
-					{ RetryWhilConcurrent(repoType, start, i, j); }
+					{ RetryWhileConcurrent(repoType, start, i, j); }
 					catch (Exception ex)
 					{ Console.WriteLine("error iteration {0}-{1}, {2}", i, j, ex.ToString()); }
-					finally
-					{
-						swInner.Stop();
-						Console.WriteLine("Iteration [{0}] Took [{1}]", j, swInner.Elapsed);
-					}
+
 				});
 
 				Console.WriteLine(string.Format("Iteration [{0}] took me [{1}] ms", i, sw.ElapsedMilliseconds));
@@ -94,7 +87,7 @@ namespace AlphaTester
 			List<ICommit> commits = repo2.GetSimpleAggregateFromTo( startTime, endTime );
 		}
 
-		private static void RetryWhilConcurrent(eRepositoryType repoType, Guid aggyId, int rootIndex, int subIndex)
+		private static void RetryWhileConcurrent(eRepositoryType repoType, Guid aggyId, int rootIndex, int subIndex)
 		{
 			while (true)
 			{
@@ -109,14 +102,14 @@ namespace AlphaTester
 					sw.Start();
 					var aggy = repo.GetSimpleAggregateById(aggyId, 0);
 					sw.Stop();
-					Console.WriteLine("Performed get in [{0}]", sw.Elapsed);
+					Console.WriteLine("{0}-{1} - Performed get in [{2}]", rootIndex, subIndex, sw.Elapsed);
 
 					sw.Reset();
 					sw.Start();
-					aggy.ChangeFoo(52);
+					aggy.ChangeFoo(subIndex);
 					repo.Save(aggy, Guid.NewGuid(), null);
 					sw.Stop();
-					Console.WriteLine("Performed save in [{0}]", sw.Elapsed);
+					Console.WriteLine("{0}-{1} -Performed save in [{2}]", rootIndex, subIndex, sw.Elapsed);
 					//Console.WriteLine("starting {0}-{1}", i, j);
 					break;
 				}

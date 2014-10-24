@@ -50,6 +50,11 @@ namespace NEventStore.Persistence.AzureBlob
 		/// <returns></returns>
 		public static HeaderDefinitionMetadata FromRaw(byte[] raw)
 		{
+			var test = BitConverter.ToInt32(raw, 4);
+			if (test < 0 || test > 100000)
+			{
+				test++;
+			}
 			return new HeaderDefinitionMetadata()
 			{
 				HeaderStartLocationOffsetBytes = BitConverter.ToInt32(raw, 0),

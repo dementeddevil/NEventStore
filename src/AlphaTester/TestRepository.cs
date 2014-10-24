@@ -1,11 +1,9 @@
-﻿using CommonDomain.Core;
-using CommonDomain.Persistence.EventStore;
-using NEventStore;
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
+using CommonDomain.Core;
+using CommonDomain.Persistence.EventStore;
+using NEventStore;
 
 namespace AlphaTester
 {
@@ -16,9 +14,9 @@ namespace AlphaTester
 
 		private EventStoreRepository _repository;
 
-        public TestRepository(eRepositoryType repositoryType)
-            :base(repositoryType)
-        { }
+		public TestRepository(eRepositoryType repositoryType)
+			:base(repositoryType)
+		{ }
 
 		/// <summary>
 		/// Get the specified aggregate by id

@@ -1,18 +1,22 @@
-﻿using CommonDomain.Core;
-using System;
+﻿using System;
 using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
+using CommonDomain.Core;
 
 namespace AlphaTester
 {
 	[Serializable]
 	public class SimpleAggregate : AggregateBase
 	{
-		private int _fooHolder;
+		private List<int> _fooHolder;
 		private DateTime _createdDate;
 		private DateTime _fooChangedDate;
+		private int _numberOfEventsApplied;
+
+		public List<int> FooHolder
+		{ get { return _fooHolder; } }
+
+		public int NumberOfEvents
+		{ get { return _numberOfEventsApplied; } }
 
 		public static SimpleAggregate CreateNew( DateTime createdDate, Guid aggregateId, int foo )
 		{ return new SimpleAggregate( aggregateId, createdDate, foo ); }
@@ -20,7 +24,7 @@ namespace AlphaTester
 		public SimpleAggregate( Guid aggregateId, DateTime createdDate, int foo )
 		{
 			Id = aggregateId;
-			_fooHolder = foo;
+			_fooHolder = new List<int>();
 			_createdDate = createdDate;
 			_fooChangedDate = createdDate;
 
@@ -30,14 +34,13 @@ namespace AlphaTester
 
 		public SimpleAggregate()
 		{
-			_fooHolder = -1;
+			_fooHolder = new List<int>();
 			_createdDate = DateTime.MinValue;
 			_fooChangedDate = DateTime.MinValue;
 		}
 
 		public void ChangeFoo( int newFoo )
 		{
-			_fooHolder = newFoo;
 			var theEvent = new FooChangedEvent( newFoo );
 			RaiseEvent( theEvent );
 		}
@@ -46,13 +49,15 @@ namespace AlphaTester
 		{
 			Id = theEvent.Id;
 			_createdDate = theEvent.CreatedDate;
-			_fooHolder = theEvent.Foo;
+			_fooHolder.Add(theEvent.Foo);
+			++_numberOfEventsApplied;
 		}
 
 		private void Apply( FooChangedEvent theEvent )
 		{
-			_fooHolder = theEvent.NewFoo;
+			_fooHolder.Add(theEvent.NewFoo);
 			_fooChangedDate = DateTime.Now;
+			++_numberOfEventsApplied;
 		}
 	}
 }

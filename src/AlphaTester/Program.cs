@@ -1,11 +1,9 @@
-﻿using NEventStore;
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 using System.Threading;
+using System.Threading.Tasks;
+using NEventStore;
 
 namespace AlphaTester
 {
@@ -20,7 +18,7 @@ namespace AlphaTester
 				{ repoType = eRepositoryType.Sql; }
 			}
 
-			var num = 100;
+			var num = 1;
 			if (args.Length > 1)
 			{ num = Convert.ToInt32(args[1]); }
 
@@ -36,19 +34,21 @@ namespace AlphaTester
 
 			var options = new ParallelOptions();
 			options.MaxDegreeOfParallelism = 10;
+			var eventNum = 9;
+			Guid start = Guid.NewGuid();
 			Parallel.For(0, num, options, (i) =>
 			{
 				Stopwatch sw = new Stopwatch();
 				sw.Start();
-				Guid start = Guid.NewGuid();
+				
 
 				var repo = new TestRepository(repoType);
 				var aggy = SimpleAggregate.CreateNew(DateTime.Now, start, 42);
 				repo.Save(aggy, Guid.NewGuid(), null);
 
 				Random random = new Random();
-				for (int j = 0; j != 10; ++j)
-				//Parallel.For(0, 1, options, (j) =>
+				//for (int j = 0; j != 10; ++j)
+				Parallel.For(0, eventNum, options, (j) =>
 				{
 					var swInner = new Stopwatch();
 					swInner.Start();
@@ -56,11 +56,20 @@ namespace AlphaTester
 					try
 					{
 						//Console.WriteLine("starting {0}-{1}", i, j);
-						repo = new TestRepository(repoType);
-						aggy = repo.GetSimpleAggregateById(start, 0);
-						aggy.ChangeFoo(52);
-						//Thread.Sleep(random.Next(100, 400));	// this is to increase race condition likelyhood
-						repo.Save(aggy, Guid.NewGuid(), null);
+						while (true)
+						{
+							try
+							{
+								repo = new TestRepository(repoType);
+								aggy = repo.GetSimpleAggregateById(start, 0);
+								aggy.ChangeFoo(j);
+								Thread.Sleep(random.Next(100, 400));	// this is to increase race condition likelihood
+								repo.Save(aggy, Guid.NewGuid(), null);
+								break;
+							}
+							catch (ConcurrencyException cex)
+							{ Console.WriteLine("Caught concurrency exception.  Iteration {0}-{1}.", i, j); }
+						}
 						//Console.WriteLine("starting {0}-{1}", i, j);
 					}
 					catch (Exception ex)
@@ -70,10 +79,32 @@ namespace AlphaTester
 						swInner.Stop();
 						Console.WriteLine("Iteration [{0}] Took [{1}]", j, swInner.Elapsed);
 					}
-				}//);
+				});
 
 				Console.WriteLine(string.Format("Iteration [{0}] took me [{1}] ms", i, sw.ElapsedMilliseconds));
 			});
+
+			// Check that aggy is still valid
+			try
+			{
+				var repo = new TestRepository(repoType);
+				var aggy = repo.GetSimpleAggregateById(start, 0);
+				var listOfInts = aggy.FooHolder;
+				for (int i = 0; i < eventNum; ++i)
+				{
+					if (!listOfInts.Contains(i))
+					{ Console.WriteLine("Aggy missing value {0}.  Event not rehydrated correctly", i); }
+				}
+				//aggy.ChangeFoo(52);
+				//repo.Save(aggy, Guid.NewGuid(), null);
+				Console.WriteLine("Aggy check passed, id: {0}", start);
+				//aggy = repo.GetSimpleAggregateById(Guid.Parse("1a5e3fe3-b906-4764-a259-0db2c39c15cd"), 0);
+				//aggy.ChangeFoo(23);
+				//repo.Save(aggy, Guid.NewGuid(), null);
+			}
+			catch (Exception ex)
+			{ Console.WriteLine("error in aggy valid check, {0}", ex.ToString()); }
+
 
 			var endTime = DateTime.UtcNow.AddSeconds( -10 );
 			var repo2 = new TestRepository(eRepositoryType.AzureBlob);

@@ -1,13 +1,13 @@
-﻿using Microsoft.WindowsAzure.Storage;
-using Microsoft.WindowsAzure.Storage.Blob;
-using NEventStore.Logging;
-using NEventStore.Serialization;
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Net;
 using System.Threading;
+using Microsoft.WindowsAzure.Storage;
+using Microsoft.WindowsAzure.Storage.Blob;
+using NEventStore.Logging;
+using NEventStore.Serialization;
 
 namespace NEventStore.Persistence.AzureBlob
 {
@@ -251,7 +251,7 @@ namespace NEventStore.Persistence.AzureBlob
 				using (var ms = new MemoryStream(totalBytes))
 				{
 					var offset = startPage * 512;
-					pageBlobReference.DownloadRangeToStream(ms, offset, totalBytes);
+					pageBlobReference.DownloadRangeToStream(ms, offset, totalBytes, AccessCondition.GenerateIfMatchCondition(pageBlobReference.Properties.ETag));
 					ms.Position = 0;
 
 					// now walk it and make it so
@@ -273,6 +273,8 @@ namespace NEventStore.Persistence.AzureBlob
 			{
 				if (ex.Message.Contains("404"))
 				{ Logger.Warn("tried to get from stream that does not exist, stream id:  ", streamId); }
+				else if (ex.Message.Contains("412"))
+				{ throw new ConcurrencyException("Concurrency exception in GetHeader", ex); }
 				else
 				{ throw; }
 			}
@@ -357,6 +359,10 @@ namespace NEventStore.Persistence.AzureBlob
 				string eTag = pageBlobReference.Properties.ETag;
 
 				var headerDefinitionMetadata = GetHeaderDefinitionMetadata(pageBlobReference);
+				if (headerDefinitionMetadata.HeaderSizeInBytes < 0 || headerDefinitionMetadata.HeaderSizeInBytes > 100000)
+				{
+					Console.WriteLine("Bad fetch of header metadata");
+				}
 				var header = GetHeader(pageBlobReference, headerDefinitionMetadata);
 
 				// we must commit at a page offset, we will just track how many pages in we must start writing at
@@ -443,6 +449,7 @@ namespace NEventStore.Persistence.AzureBlob
 		/// <returns>An Commit if successful.</returns>
 		public ICommit Commit(CommitAttempt attempt)
 		{
+			Console.WriteLine("Entering Commit - id: {0}", attempt.CommitId);
 			var pageBlobReference = _blobContainer.GetPageBlobReference(attempt.BucketId.ToLower() + "/" + attempt.StreamId);
 			CreateIfNotExistsAndFetchAttributes(pageBlobReference);
 			var header = GetHeader(pageBlobReference, null);
@@ -458,7 +465,7 @@ namespace NEventStore.Persistence.AzureBlob
 			}
 
 			if (attempt.CommitSequence <= header.LastCommitSequence)
-			{ throw new ConcurrencyException(); }
+			{ throw new ConcurrencyException("Concurrency exception in Commit"); }
 
 			var blobCommit = new AzureBlobCommit();
 			blobCommit.BucketId = attempt.BucketId;
@@ -479,7 +486,9 @@ namespace NEventStore.Persistence.AzureBlob
 			++header.UndispatchedCommitCount;
 			header.LastCommitSequence = attempt.CommitSequence;
 
+			Console.WriteLine("In Commit before CNM - id: {0}", attempt.CommitId);
 			CommitNewMessage(pageBlobReference, serializedBlobCommit, header, startPage * _blobPageSize);
+			Console.WriteLine("Exiting Commit after CNM - id: {0}", attempt.CommitId);
 			return CreateCommitFromAzureBlobCommit(blobCommit);
 		}
 
@@ -525,7 +534,7 @@ namespace NEventStore.Persistence.AzureBlob
 			using (var ms = new MemoryStream(commitDefinition.DataSizeBytes))
 			{
 				var startIndex = commitDefinition.StartPage * 512;
-				blob.DownloadRangeToStream(ms, startIndex, commitDefinition.DataSizeBytes);
+				blob.DownloadRangeToStream(ms, startIndex, commitDefinition.DataSizeBytes, AccessCondition.GenerateIfMatchCondition(blob.Properties.ETag));
 				ms.Position = 0;
 
 				AzureBlobCommit azureBlobCommit;
@@ -570,8 +579,17 @@ namespace NEventStore.Persistence.AzureBlob
 			var headerDefinitionMetaDataOffset = blob.Properties.Length - _headerDefinitionMetadataBytes;
 			using (var ms = new MemoryStream(HeaderDefinitionMetadata.RawSize))
 			{
-				blob.DownloadRangeToStream(ms, headerDefinitionMetaDataOffset, HeaderDefinitionMetadata.RawSize);
-				return HeaderDefinitionMetadata.FromRaw(ms.ToArray());
+				try { 
+					blob.DownloadRangeToStream(ms, headerDefinitionMetaDataOffset, HeaderDefinitionMetadata.RawSize, AccessCondition.GenerateIfMatchCondition(blob.Properties.ETag));
+					return HeaderDefinitionMetadata.FromRaw(ms.ToArray());
+				}
+				catch (Microsoft.WindowsAzure.Storage.StorageException ex)
+				{
+					if (ex.Message.Contains("412"))
+					{ throw new ConcurrencyException("Concurrency exception in GetHeader", ex); }
+					else
+					{ throw; }
+				}
 			}
 		}
 
@@ -587,8 +605,18 @@ namespace NEventStore.Persistence.AzureBlob
 			{
 				using (var ms = new MemoryStream(headerDefinitionMetadata.HeaderSizeInBytes))
 				{
-					blob.DownloadRangeToStream(ms, headerDefinitionMetadata.HeaderStartLocationOffsetBytes, headerDefinitionMetadata.HeaderSizeInBytes);
-					return _serializer.Deserialize<StreamBlobHeader>(ms.ToArray());
+					try
+					{
+						blob.DownloadRangeToStream(ms, headerDefinitionMetadata.HeaderStartLocationOffsetBytes, headerDefinitionMetadata.HeaderSizeInBytes, AccessCondition.GenerateIfMatchCondition(blob.Properties.ETag));
+						return _serializer.Deserialize<StreamBlobHeader>(ms.ToArray());
+					}
+					catch (Microsoft.WindowsAzure.Storage.StorageException ex)
+					{
+						if (ex.Message.Contains("412"))
+						{ throw new ConcurrencyException("Concurrency exception in GetHeader", ex); }
+						else
+						{ throw; }
+					}
 				}
 			}
 			else
@@ -633,6 +661,7 @@ namespace NEventStore.Persistence.AzureBlob
 		{
 			try
 			{
+				Console.WriteLine("In commitnewmessage - id: {0}", header.PageBlobCommitDefinitions.Last().CommitId);
 				newCommit = newCommit ?? new byte[0];
 
 				blob.Metadata[_isEventStreamAggregateKey] = "yes";
@@ -675,8 +704,9 @@ namespace NEventStore.Persistence.AzureBlob
 			}
 			catch (Microsoft.WindowsAzure.Storage.StorageException ex)
 			{
+				Console.WriteLine("Caught exception in CNM - id: {0}", header.PageBlobCommitDefinitions.Last().CommitId);
 				if (ex.Message.Contains("412"))
-				{ throw new ConcurrencyException("concurrency exception in markcommitasdispachted", ex); }
+				{ throw new ConcurrencyException("Concurrency exception in CommitNewMessage", ex); }
 				else
 				{ throw; }
 			}

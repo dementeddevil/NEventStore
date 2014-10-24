@@ -478,9 +478,6 @@ namespace NEventStore.Persistence.AzureBlob
 			blobCommit.StreamRevision = attempt.StreamRevision;
 			var serializedBlobCommit = _serializer.Serialize(blobCommit);
 
-			var pageAlignedBlobCommit = new byte[GetPageAlignedSize(serializedBlobCommit.Length)];
-			Array.Copy(serializedBlobCommit, pageAlignedBlobCommit, serializedBlobCommit.Length);
-
 			header.AppendPageBlobCommitDefinition(new PageBlobCommitDefinition(serializedBlobCommit.Length, attempt.CommitId, attempt.StreamRevision,
 				attempt.CommitStamp, header.PageBlobCommitDefinitions.Count, startPage, GetNextCheckpoint()));
 			++header.UndispatchedCommitCount;
@@ -600,27 +597,32 @@ namespace NEventStore.Persistence.AzureBlob
 		/// <returns>A populated StreamBlobHeader.</returns>
 		private StreamBlobHeader GetHeader(CloudPageBlob blob, HeaderDefinitionMetadata prefetched)
 		{
-			var headerDefinitionMetadata = prefetched ?? GetHeaderDefinitionMetadata(blob);
-			if (headerDefinitionMetadata.HeaderSizeInBytes != 0)
+			try
 			{
-				using (var ms = new MemoryStream(headerDefinitionMetadata.HeaderSizeInBytes))
+				var headerDefinitionMetadata = prefetched ?? GetHeaderDefinitionMetadata(blob);
+				if (headerDefinitionMetadata.HeaderSizeInBytes != 0)
 				{
-					try
+					using (var ms = new MemoryStream(headerDefinitionMetadata.HeaderSizeInBytes))
 					{
-						blob.DownloadRangeToStream(ms, headerDefinitionMetadata.HeaderStartLocationOffsetBytes, headerDefinitionMetadata.HeaderSizeInBytes, AccessCondition.GenerateIfMatchCondition(blob.Properties.ETag));
-						return _serializer.Deserialize<StreamBlobHeader>(ms.ToArray());
-					}
-					catch (Microsoft.WindowsAzure.Storage.StorageException ex)
-					{
-						if (ex.Message.Contains("412"))
-						{ throw new ConcurrencyException("Concurrency exception in GetHeader", ex); }
-						else
-						{ throw; }
+						try
+						{
+							blob.DownloadRangeToStream(ms, headerDefinitionMetadata.HeaderStartLocationOffsetBytes, headerDefinitionMetadata.HeaderSizeInBytes, AccessCondition.GenerateIfMatchCondition(blob.Properties.ETag));
+							return _serializer.Deserialize<StreamBlobHeader>(ms.ToArray());
+						}
+						catch (Microsoft.WindowsAzure.Storage.StorageException ex)
+						{
+							if (ex.Message.Contains("412"))
+							{ throw new ConcurrencyException("Concurrency exception in GetHeader", ex); }
+							else
+							{ throw; }
+						}
 					}
 				}
+				else
+				{ return new StreamBlobHeader(); }
 			}
-			else
-			{ return new StreamBlobHeader(); }
+			catch (Microsoft.WindowsAzure.Storage.StorageException ex)
+			{ throw HandleAndRemapCommonExceptions(ex); }
 		}
 
 		/// <summary>
@@ -632,7 +634,6 @@ namespace NEventStore.Persistence.AzureBlob
 		{
 			var remainder = nonAligned % _blobPageSize;
 			return (remainder == 0) ? nonAligned : nonAligned + (_blobPageSize - remainder);
-			
 		}
 
 		/// <summary>
@@ -642,10 +643,15 @@ namespace NEventStore.Persistence.AzureBlob
 		/// <param name="neededSize"></param>
 		private void ResizeBlob(CloudPageBlob blob, int neededSize)
 		{
-			var currentSize = blob.Properties.Length;
-			var newSize = Math.Max((int)(currentSize * _options.BlobGrowthRatePercent), neededSize);
-			newSize = GetPageAlignedSize(newSize);
-			blob.Resize(newSize, AccessCondition.GenerateIfMatchCondition(blob.Properties.ETag));
+			try
+			{
+				var currentSize = blob.Properties.Length;
+				var newSize = Math.Max((int)(currentSize * _options.BlobGrowthRatePercent), neededSize);
+				newSize = GetPageAlignedSize(newSize);
+				blob.Resize(newSize, AccessCondition.GenerateIfMatchCondition(blob.Properties.ETag));
+			}
+			catch (Microsoft.WindowsAzure.Storage.StorageException ex)
+			{ throw HandleAndRemapCommonExceptions(ex); }
 		}
 
 		/// <summary>
@@ -726,9 +732,7 @@ namespace NEventStore.Persistence.AzureBlob
 		private void CreateIfNotExistsAndFetchAttributes(CloudPageBlob blob)
 		{
 			try
-			{
-				blob.FetchAttributes();
-			}
+			{ blob.FetchAttributes(); }
 			catch (Microsoft.WindowsAzure.Storage.StorageException ex)
 			{
 				if (ex.Message.Contains("404"))
@@ -784,6 +788,14 @@ namespace NEventStore.Persistence.AzureBlob
 			}
 
 			return nextCheckpoint;
+		}
+
+		private Exception HandleAndRemapCommonExceptions(Microsoft.WindowsAzure.Storage.StorageException ex)
+		{
+			if (ex.Message.Contains("412"))
+			{ return new ConcurrencyException("concurrency exception in markcommitasdispachted", ex); }
+			else
+			{ return ex; }
 		}
 
 		#endregion

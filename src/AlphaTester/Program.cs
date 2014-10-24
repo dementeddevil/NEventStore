@@ -54,24 +54,7 @@ namespace AlphaTester
 					swInner.Start();
 
 					try
-					{
-						//Console.WriteLine("starting {0}-{1}", i, j);
-						while (true)
-						{
-							try
-							{
-								repo = new TestRepository(repoType);
-								aggy = repo.GetSimpleAggregateById(start, 0);
-								aggy.ChangeFoo(j);
-								Thread.Sleep(random.Next(100, 400));	// this is to increase race condition likelihood
-								repo.Save(aggy, Guid.NewGuid(), null);
-								break;
-							}
-							catch (ConcurrencyException cex)
-							{ Console.WriteLine("Caught concurrency exception.  Iteration {0}-{1}.", i, j); }
-						}
-						//Console.WriteLine("starting {0}-{1}", i, j);
-					}
+					{ RetryWhilConcurrent(repoType, start, i, j); }
 					catch (Exception ex)
 					{ Console.WriteLine("error iteration {0}-{1}, {2}", i, j, ex.ToString()); }
 					finally
@@ -109,6 +92,40 @@ namespace AlphaTester
 			var endTime = DateTime.UtcNow.AddSeconds( -10 );
 			var repo2 = new TestRepository(eRepositoryType.AzureBlob);
 			List<ICommit> commits = repo2.GetSimpleAggregateFromTo( startTime, endTime );
+		}
+
+		private static void RetryWhilConcurrent(eRepositoryType repoType, Guid aggyId, int rootIndex, int subIndex)
+		{
+			while (true)
+			{
+				Random random = new Random();
+
+				try
+				{
+					Console.WriteLine("starting {0}-{1}", rootIndex, subIndex);
+					var repo = new TestRepository(repoType);
+
+					Stopwatch sw = new Stopwatch();
+					sw.Start();
+					var aggy = repo.GetSimpleAggregateById(aggyId, 0);
+					sw.Stop();
+					Console.WriteLine("Performed get in [{0}]", sw.Elapsed);
+
+					sw.Reset();
+					sw.Start();
+					aggy.ChangeFoo(52);
+					repo.Save(aggy, Guid.NewGuid(), null);
+					sw.Stop();
+					Console.WriteLine("Performed save in [{0}]", sw.Elapsed);
+					//Console.WriteLine("starting {0}-{1}", i, j);
+					break;
+				}
+				catch (ConcurrencyException)
+				{
+					Console.WriteLine("Concurrency Detected, will retry shortly");
+					Thread.Sleep(random.Next(0, 200));	// this is to increase race condition likelyhood
+				}
+			}
 		}
 	}
 }

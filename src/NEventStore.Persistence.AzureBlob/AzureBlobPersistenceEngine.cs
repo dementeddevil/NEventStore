@@ -1,9 +1,11 @@
 ﻿using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Net;
 using System.Threading;
+using System.Threading.Tasks;
 using Microsoft.WindowsAzure.Storage;
 using Microsoft.WindowsAzure.Storage.Blob;
 using NEventStore.Logging;
@@ -27,6 +29,11 @@ namespace NEventStore.Persistence.AzureBlob
 		private const string _checkpointNumberKey = "checkpointnumber";
 		private const string _hasUndispatchedCommitsKey = "hasUndispatchedCommits";
 		private const string _isEventStreamAggregateKey = "isEventStreamAggregate";
+
+		private const int _blobPageSize = 512;
+		private const int _headerDefinitionMetadataPages = (HeaderDefinitionMetadata.RawSize / _blobPageSize) + 1;
+		private const int _headerDefinitionMetadataBytes = _headerDefinitionMetadataPages * _blobPageSize;
+		private static byte[] _maxFillSpace = new byte[1024];
 
 		private readonly ISerialize _serializer;
 		private readonly AzureBlobPersistenceOptions _options;
@@ -216,9 +223,17 @@ namespace NEventStore.Persistence.AzureBlob
 			}
 		}
 
+		/// <summary>
+		/// Internal get from call
+		/// </summary>
+		/// <param name="bucketId"></param>
+		/// <param name="streamId"></param>
+		/// <param name="minRevision"></param>
+		/// <param name="maxRevision"></param>
+		/// <returns></returns>
 		private IEnumerable<ICommit> GetFromInternal(string bucketId, string streamId, int minRevision, int maxRevision)
 		{
-			var commits = new List<ICommit>();
+			var commits = new ConcurrentBag<ICommit>();
 			var pageBlobReference = _blobContainer
 				.ListBlobs(bucketId + "/" + streamId, true,
 				BlobListingDetails.Metadata).OfType<CloudPageBlob>().SingleOrDefault();
@@ -251,33 +266,26 @@ namespace NEventStore.Persistence.AzureBlob
 				}
 
 				// download all the data
-				var totalBytes = (endPage - startPage + 1) * 512;
-				var byteContainer = new byte[totalBytes];
-				using (var ms = new MemoryStream(totalBytes))
+				var byteContainer = new byte[(endPage - startPage + 1) * 512];
+				pageBlobReference.DownloadRangeToByteArray(byteContainer, 0, startPage*512, byteContainer.Length,
+					AccessCondition.GenerateIfMatchCondition(pageBlobReference.Properties.ETag));
+
+				// process the downloaded data
+				for (int i = startIndex; i != startIndex + numberOfCommits; i++)
 				{
-					var offset = startPage * 512;
-					pageBlobReference.DownloadRangeToStream(ms, offset, totalBytes, AccessCondition.GenerateIfMatchCondition(pageBlobReference.Properties.ETag));
-					ms.Position = 0;
-
-					// now walk it and make it so
-					for (int i = startIndex; i != startIndex + numberOfCommits; ++i)
+					var commitStartIndex = (header.PageBlobCommitDefinitions[(int)i].StartPage - startPage) * _blobPageSize;
+					var commitSize = header.PageBlobCommitDefinitions[i].DataSizeBytes;
+					using (var ms = new MemoryStream(byteContainer, commitStartIndex, commitSize, false))
 					{
-						ms.Read(byteContainer, 0, header.PageBlobCommitDefinitions[i].DataSizeBytes);
-						using (var ms2 = new MemoryStream(byteContainer, 0, header.PageBlobCommitDefinitions[i].DataSizeBytes, false))
-						{
-							var blobCommit = _serializer.Deserialize<AzureBlobCommit>(ms2);
-							commits.Add(CreateCommitFromAzureBlobCommit(blobCommit));
-						}
-
-						var remainder = header.PageBlobCommitDefinitions[i].DataSizeBytes % 512;
-						ms.Read(byteContainer, 0, 512 - remainder);
+						var commit = _serializer.Deserialize<AzureBlobCommit>(ms);
+						commits.Add(CreateCommitFromAzureBlobCommit(commit));
 					}
-				}
+				};
 			}
 			catch (Microsoft.WindowsAzure.Storage.StorageException ex)
 			{ throw HandleAndRemapCommonExceptions(ex); }
 
-			return commits.OrderBy(c => c.StreamRevision);
+			return commits;
 		}
 
 		/// <summary>
@@ -323,7 +331,7 @@ namespace NEventStore.Persistence.AzureBlob
 
 						if (isDirty)
 						{
-							// Because feting the header for a specific blob is a two phase operation it may take a couple tries if we are working with the
+							// Because fetching the header for a specific blob is a two phase operation it may take a couple tries if we are working with the
 							// blob.  This is just a quality of life improvement for the user of the store so loading of the store does not hit frequent optimistic
 							// concurrency hits that cause the store to have to re-initialize.
 							var maxTries = 0;
@@ -332,7 +340,6 @@ namespace NEventStore.Persistence.AzureBlob
 								try
 								{
 									var header = GetHeader(pageBlob, null);
-
 									if (header.UndispatchedCommitCount > 0)
 									{
 										foreach (var definition in header.PageBlobCommitDefinitions)
@@ -539,8 +546,6 @@ namespace NEventStore.Persistence.AzureBlob
 		/// <returns></returns>
 		private ICommit CreateCommitFromDefinition(CloudPageBlob blob, PageBlobCommitDefinition commitDefinition)
 		{
-			var header = GetHeader(blob, null);
-
 			using (var ms = new MemoryStream(commitDefinition.DataSizeBytes))
 			{
 				var startIndex = commitDefinition.StartPage * 512;
@@ -578,11 +583,6 @@ namespace NEventStore.Persistence.AzureBlob
 								blobEntry.Headers,
 								blobEntry.Events);
 		}
-
-		private const int _blobPageSize = 512;
-		private const int _headerDefinitionMetadataPages = (HeaderDefinitionMetadata.RawSize / _blobPageSize) + 1;
-		private const int _headerDefinitionMetadataBytes = _headerDefinitionMetadataPages * _blobPageSize;
-		private static byte[] _maxFillSpace = new byte[1024];
 
 		private HeaderDefinitionMetadata GetHeaderDefinitionMetadata(CloudPageBlob blob)
 		{
@@ -651,8 +651,7 @@ namespace NEventStore.Persistence.AzureBlob
 			try
 			{
 				var currentSize = blob.Properties.Length;
-				var newSize = Math.Max((int)(currentSize * _options.BlobGrowthRatePercent), neededSize);
-				newSize = GetPageAlignedSize(newSize);
+				var newSize = GetPageAlignedSize(neededSize);
 				blob.Resize(newSize, AccessCondition.GenerateIfMatchCondition(blob.Properties.ETag));
 			}
 			catch (Microsoft.WindowsAzure.Storage.StorageException ex)

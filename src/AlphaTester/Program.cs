@@ -34,7 +34,7 @@ namespace AlphaTester
 
 			var options = new ParallelOptions();
 			options.MaxDegreeOfParallelism = 10;
-			var eventNum = 150;
+			var eventNum = 4;
 			Guid start = Guid.NewGuid();
 			Parallel.For(0, num, options, (i) =>
 			{
@@ -47,7 +47,7 @@ namespace AlphaTester
 				repo.Save(aggy, Guid.NewGuid(), null);
 
 				Random random = new Random();
-				//for (int j = 0; j != 10; ++j)
+				//for (int j = 0; j != eventNum; ++j)
 				Parallel.For(0, eventNum, options, (j) =>
 				{
 					try
@@ -71,20 +71,11 @@ namespace AlphaTester
 					if (!listOfInts.Contains(i))
 					{ Console.WriteLine("Aggy missing value {0}.  Event not rehydrated correctly", i); }
 				}
-				//aggy.ChangeFoo(52);
-				//repo.Save(aggy, Guid.NewGuid(), null);
-				Console.WriteLine("Aggy check passed, id: {0}", start);
-				//aggy = repo.GetSimpleAggregateById(Guid.Parse("1a5e3fe3-b906-4764-a259-0db2c39c15cd"), 0);
-				//aggy.ChangeFoo(23);
-				//repo.Save(aggy, Guid.NewGuid(), null);
+
+				Console.WriteLine("Aggy check done, id: {0}", start);
 			}
 			catch (Exception ex)
 			{ Console.WriteLine("error in aggy valid check, {0}", ex.ToString()); }
-
-
-			var endTime = DateTime.UtcNow.AddSeconds( -10 );
-			var repo2 = new TestRepository(eRepositoryType.AzureBlob);
-			List<ICommit> commits = repo2.GetSimpleAggregateFromTo( startTime, endTime );
 		}
 
 		private static void RetryWhileConcurrent(eRepositoryType repoType, Guid aggyId, int rootIndex, int subIndex)

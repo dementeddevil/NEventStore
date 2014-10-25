@@ -34,7 +34,7 @@ namespace AlphaTester
 
 			var options = new ParallelOptions();
 			options.MaxDegreeOfParallelism = 10;
-			var eventNum = 150;
+			var eventNum = 50;
 			Guid start = Guid.NewGuid();
 			Parallel.For(0, num, options, (i) =>
 			{
@@ -43,19 +43,24 @@ namespace AlphaTester
 				
 
 				var repo = new TestRepository(repoType);
+
+				Stopwatch creationTimer = new Stopwatch();
+				creationTimer.Start();
 				var aggy = SimpleAggregate.CreateNew(DateTime.Now, start, 42);
 				repo.Save(aggy, Guid.NewGuid(), null);
+				creationTimer.Stop();
+				Console.WriteLine("Create aggy in [{0}]", creationTimer.Elapsed);
 
 				Random random = new Random();
-				//for (int j = 0; j != eventNum; ++j)
-				Parallel.For(0, eventNum, options, (j) =>
+				for (int j = 0; j != eventNum; ++j)
+				//Parallel.For(0, eventNum, options, (j) =>
 				{
 					try
 					{ RetryWhileConcurrent(repoType, start, i, j); }
 					catch (Exception ex)
 					{ Console.WriteLine("error iteration {0}-{1}, {2}", i, j, ex.ToString()); }
 
-				});
+				}//);
 
 				Console.WriteLine(string.Format("Iteration [{0}] took me [{1}] ms", i, sw.ElapsedMilliseconds));
 			});
@@ -86,22 +91,16 @@ namespace AlphaTester
 
 				try
 				{
-					Console.WriteLine("starting {0}-{1}", rootIndex, subIndex);
-					var repo = new TestRepository(repoType);
-
 					Stopwatch sw = new Stopwatch();
 					sw.Start();
-					var aggy = repo.GetSimpleAggregateById(aggyId, 0);
-					sw.Stop();
-					Console.WriteLine("{0}-{1} - Performed get in [{2}]", rootIndex, subIndex, sw.Elapsed);
 
-					sw.Reset();
-					sw.Start();
+					var repo = new TestRepository(repoType);
+					var aggy = repo.GetSimpleAggregateById(aggyId, 0);
 					aggy.ChangeFoo(subIndex);
 					repo.Save(aggy, Guid.NewGuid(), null);
+
 					sw.Stop();
-					Console.WriteLine("{0}-{1} -Performed save in [{2}]", rootIndex, subIndex, sw.Elapsed);
-					//Console.WriteLine("starting {0}-{1}", i, j);
+					Console.WriteLine("finished {0}-{1} in {2}", rootIndex, subIndex, sw.Elapsed);
 					break;
 				}
 				catch (ConcurrencyException)

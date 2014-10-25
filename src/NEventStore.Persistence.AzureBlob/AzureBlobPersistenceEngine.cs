@@ -33,7 +33,7 @@ namespace NEventStore.Persistence.AzureBlob
 		private const int _blobPageSize = 512;
 		private const int _headerDefinitionMetadataPages = (HeaderDefinitionMetadata.RawSize / _blobPageSize) + 1;
 		private const int _headerDefinitionMetadataBytes = _headerDefinitionMetadataPages * _blobPageSize;
-		private static byte[] _maxFillSpace = new byte[1024];
+		private static byte[] _maxFillSpace = new byte[5096];
 
 		private readonly ISerialize _serializer;
 		private readonly AzureBlobPersistenceOptions _options;
@@ -549,7 +549,7 @@ namespace NEventStore.Persistence.AzureBlob
 			using (var ms = new MemoryStream(commitDefinition.DataSizeBytes))
 			{
 				var startIndex = commitDefinition.StartPage * 512;
-				blob.DownloadRangeToStream(ms, startIndex, commitDefinition.DataSizeBytes, AccessCondition.GenerateIfMatchCondition(blob.Properties.ETag));
+				blob.DownloadRangeToStream(ms, startIndex, commitDefinition.DataSizeBytes);
 				ms.Position = 0;
 
 				AzureBlobCommit azureBlobCommit;
@@ -696,7 +696,8 @@ namespace NEventStore.Persistence.AzureBlob
 
 					var remainder = (ms.Position % _blobPageSize);
 					var fillSpace = writeSize - newCommit.Length - serialized.Length - _headerDefinitionMetadataBytes;
-					ms.Write(_maxFillSpace, 0, (int)fillSpace);
+					ms.Position += fillSpace;
+					//ms.Write(_maxFillSpace, 0, (int)fillSpace);
 
 					var headerDefinitionMetadata = new HeaderDefinitionMetadata();
 					headerDefinitionMetadata.HasUndispatchedCommits = header.PageBlobCommitDefinitions.Any((x) => !x.IsDispatched);

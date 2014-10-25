@@ -228,7 +228,6 @@ namespace NEventStore.Persistence.AzureBlob
 
 			try
 			{
-				//pageBlobReference.FetchAttributes();
 				var header = GetHeader(pageBlobReference, null);
 
 				// find out how many pages we are reading
@@ -462,8 +461,12 @@ namespace NEventStore.Persistence.AzureBlob
 		/// <returns>An Commit if successful.</returns>
 		public ICommit Commit(CommitAttempt attempt)
 		{
-			var pageBlobReference = _blobContainer.GetPageBlobReference(attempt.BucketId.ToLower() + "/" + attempt.StreamId);
-			CreateIfNotExistsAndFetchAttributes(pageBlobReference);
+			var pageBlobReference = _blobContainer
+				.ListBlobs(attempt.BucketId + "/" + attempt.StreamId, true,
+				BlobListingDetails.Metadata).OfType<CloudPageBlob>().SingleOrDefault();
+
+			if (pageBlobReference == null)
+			{ pageBlobReference = CreatePageBlobReference(_blobContainer, attempt.BucketId + "/" + attempt.StreamId); }
 			var header = GetHeader(pageBlobReference, null);
 
 			// we must commit at a page offset, we will just track how many pages in we must start writing at
@@ -724,20 +727,12 @@ namespace NEventStore.Persistence.AzureBlob
 		/// Tries to fetch a blob's attributes.  Creates the blob if it does not exist.
 		/// </summary>
 		/// <param name="blob">The blob.</param>
-		private void CreateIfNotExistsAndFetchAttributes(CloudPageBlob blob)
+		private CloudPageBlob CreatePageBlobReference(CloudBlobContainer cloudBlobContainer, string blobName)
 		{
-			try
-			{ blob.FetchAttributes(); }
-			catch (Microsoft.WindowsAzure.Storage.StorageException ex)
-			{
-				if (ex.Message.Contains("404"))
-				{
-					blob.Create(1024 * _options.DefaultStartingBlobSizeKb);
-					blob.FetchAttributes();
-				}
-				else
-				{ throw; }
-			}
+			var pageBlobReference = cloudBlobContainer.GetPageBlobReference(blobName);
+			pageBlobReference.Create((long)512);
+			pageBlobReference.FetchAttributes();
+			return pageBlobReference;
 		}
 
 		/// <summary>
@@ -747,8 +742,13 @@ namespace NEventStore.Persistence.AzureBlob
 		private uint GetNextCheckpoint()
 		{
 			var blobContainer2 = _blobClient.GetContainerReference(_rootContainerName);
-			var pageBlobReference = blobContainer2.GetPageBlobReference(_checkpointBlobName);
-			pageBlobReference.FetchAttributes();
+
+			var pageBlobReference = _blobContainer
+				.ListBlobs(_checkpointBlobName, true,
+				BlobListingDetails.Metadata).OfType<CloudPageBlob>().SingleOrDefault();
+
+			if (pageBlobReference == null)
+			{ pageBlobReference = CreatePageBlobReference(blobContainer2, _checkpointBlobName); }
 
 			string serializedCheckpointNumber;
 			uint nextCheckpoint = 1;

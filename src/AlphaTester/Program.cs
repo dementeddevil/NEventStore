@@ -34,7 +34,7 @@ namespace AlphaTester
 
 			var options = new ParallelOptions();
 			options.MaxDegreeOfParallelism = 10;
-			var eventNum = 4;
+			var eventNum = 150;
 			Guid start = Guid.NewGuid();
 			Parallel.For(0, num, options, (i) =>
 			{

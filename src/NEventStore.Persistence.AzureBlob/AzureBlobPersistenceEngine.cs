@@ -233,7 +233,7 @@ namespace NEventStore.Persistence.AzureBlob
 		/// <returns></returns>
 		private IEnumerable<ICommit> GetFromInternal(string bucketId, string streamId, int minRevision, int maxRevision)
 		{
-			var commits = new ConcurrentBag<ICommit>();
+			var commits = new List<ICommit>();
 			var pageBlobReference = _blobContainer
 				.ListBlobs(bucketId + "/" + streamId, true,
 				BlobListingDetails.Metadata).OfType<CloudPageBlob>().SingleOrDefault();
@@ -742,7 +742,7 @@ namespace NEventStore.Persistence.AzureBlob
 		{
 			var blobContainer2 = _blobClient.GetContainerReference(_rootContainerName);
 
-			var pageBlobReference = _blobContainer
+			var pageBlobReference = blobContainer2
 				.ListBlobs(_checkpointBlobName, true,
 				BlobListingDetails.Metadata).OfType<CloudPageBlob>().SingleOrDefault();
 
@@ -768,6 +768,7 @@ namespace NEventStore.Persistence.AzureBlob
 					{
 						if (_options.ForceUniqueCheckpoint)
 						{
+							Logger.Warn("Unique checkpoint fetch failed.  Trying again.  If this happens frequently it could have significant impacts on system performance.  It may warrent turning off forcing of unique checkpoints.");
 							pageBlobReference.FetchAttributes();
 
 							if (pageBlobReference.Metadata.TryGetValue(_checkpointNumberKey, out serializedCheckpointNumber))

@@ -49,7 +49,7 @@ namespace NEventStore
         public string BucketId { get; private set; }
         public string StreamId { get; private set; }
         public int StreamRevision { get; private set; }
-        public int CommitSequence { get; private set; }
+		public int CommitSequence { get; private set; }
 
         public ICollection<EventMessage> CommittedEvents
         {

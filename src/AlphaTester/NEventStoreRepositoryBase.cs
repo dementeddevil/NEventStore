@@ -70,6 +70,8 @@ namespace AlphaTester
 
 		private void DispatchCommit( ICommit commit )
 		{
+			Console.WriteLine("Dispatched!!!");
+
 			// This is where we'd hook into our messaging infrastructure, such as NServiceBus,
 			// MassTransit, WCF, or some other communications infrastructure.
 			// This can be a class as well--just implement IDispatchCommits.

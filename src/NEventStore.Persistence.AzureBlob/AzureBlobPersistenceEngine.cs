@@ -132,11 +132,11 @@ namespace NEventStore.Persistence.AzureBlob
 		public IEnumerable<ICommit> GetFrom(string checkpointToken = null)
 		{
 			var containers = _blobClient.ListContainers(_eventSourcePrefix);
-			var allCommitDefinitions = new List<Tuple<CloudPageBlob, PageBlobCommitDefinition>>();
+			var allCommitDefinitions = new List<Tuple<WrappedPageBlob, PageBlobCommitDefinition>>();
 
 			foreach (var container in containers)
 			{
-				var blobs = container.ListBlobs(GetContainerName(), true, BlobListingDetails.Metadata).OfType<CloudPageBlob>();
+				var blobs = WrappedPageBlob.GetAllMatchinPrefix(container, GetContainerName());
 
 				// this could be a tremendous amount of data.  Depending on system used
 				// this may not be performant enough and may require some sort of index be built.
@@ -144,7 +144,7 @@ namespace NEventStore.Persistence.AzureBlob
 				{
 					var header = GetHeader(pageBlob, null);
 					foreach (var definition in header.PageBlobCommitDefinitions)
-					{ allCommitDefinitions.Add(new Tuple<CloudPageBlob, PageBlobCommitDefinition>(pageBlob, definition)); }
+					{ allCommitDefinitions.Add(new Tuple<WrappedPageBlob, PageBlobCommitDefinition>(pageBlob, definition)); }
 				}
 			}
 
@@ -164,20 +164,18 @@ namespace NEventStore.Persistence.AzureBlob
 		/// <returns>The list of commits from the given blobEntry and greater than or equal to the start date and less than or equal to the end date.</returns>
 		public IEnumerable<ICommit> GetFromTo(string bucketId, DateTime start, DateTime end)
 		{
-			var blobs = _blobContainer
-				.ListBlobs(GetContainerName() + "/" + bucketId, true,
-				BlobListingDetails.Metadata).OfType<CloudPageBlob>();
+			var pageBlobs = WrappedPageBlob.GetAllMatchinPrefix(_blobContainer, GetContainerName() + "/" + bucketId);
 
 			// this could be a tremendous amount of data.  Depending on system used
 			// this may not be performant enough and may require some sort of index be built.
-			var allCommitDefinitions = new List<Tuple<CloudPageBlob, PageBlobCommitDefinition>>();
-			foreach (var pageBlob in blobs)
+			var allCommitDefinitions = new List<Tuple<WrappedPageBlob, PageBlobCommitDefinition>>();
+			foreach (var pageBlob in pageBlobs)
 			{
 				var header = GetHeader(pageBlob, null);
 				foreach (var definition in header.PageBlobCommitDefinitions)
 				{
 					if (definition.CommitStampUtc >= start && definition.CommitStampUtc <= end)
-					{ allCommitDefinitions.Add(new Tuple<CloudPageBlob, PageBlobCommitDefinition>(pageBlob, definition)); }
+					{ allCommitDefinitions.Add(new Tuple<WrappedPageBlob, PageBlobCommitDefinition>(pageBlob, definition)); }
 				}
 			}
 
@@ -233,59 +231,48 @@ namespace NEventStore.Persistence.AzureBlob
 		/// <returns></returns>
 		private IEnumerable<ICommit> GetFromInternal(string bucketId, string streamId, int minRevision, int maxRevision)
 		{
-			var commits = new List<ICommit>();
-			var pageBlobReference = _blobContainer
-				.ListBlobs(bucketId + "/" + streamId, true,
-				BlobListingDetails.Metadata).OfType<CloudPageBlob>().SingleOrDefault();
+			var pageBlob = WrappedPageBlob.CreateNewIfNotExists(_blobContainer, bucketId + "/" + streamId);
 
-			if (pageBlobReference == null)
-			{ return commits; }
+			var header = GetHeader(pageBlob, null);
 
-			try
+			// find out how many pages we are reading
+			int startPage = 0;
+			int endPage = startPage + 1;
+			int startIndex = 0;
+			int numberOfCommits = 0;
+			foreach (var commitDefinition in header.PageBlobCommitDefinitions)
 			{
-				var header = GetHeader(pageBlobReference, null);
-
-				// find out how many pages we are reading
-				int startPage = 0;
-				int endPage = startPage;
-				int startIndex = 0;
-				int numberOfCommits = 0;
-				foreach (var commitDefinition in header.PageBlobCommitDefinitions)
+				if (minRevision > commitDefinition.Revision)
 				{
-					if (minRevision > commitDefinition.Revision)
-					{
-						++startIndex;
-						startPage += commitDefinition.TotalPagesUsed;
-					}
-					else if (maxRevision < commitDefinition.Revision)
-					{ break; }
-					else
-					{ ++numberOfCommits; }
-
-					endPage += commitDefinition.TotalPagesUsed;
+					++startIndex;
+					startPage += commitDefinition.TotalPagesUsed;
 				}
+				else if (maxRevision < commitDefinition.Revision)
+				{ break; }
+				else
+				{ ++numberOfCommits; }
 
-				// download all the data
-				var byteContainer = new byte[(endPage - startPage + 1) * 512];
-				pageBlobReference.DownloadRangeToByteArray(byteContainer, 0, startPage*512, byteContainer.Length,
-					AccessCondition.GenerateIfMatchCondition(pageBlobReference.Properties.ETag));
-
-				// process the downloaded data
-				for (int i = startIndex; i != startIndex + numberOfCommits; i++)
-				{
-					var commitStartIndex = (header.PageBlobCommitDefinitions[(int)i].StartPage - startPage) * _blobPageSize;
-					var commitSize = header.PageBlobCommitDefinitions[i].DataSizeBytes;
-					using (var ms = new MemoryStream(byteContainer, commitStartIndex, commitSize, false))
-					{
-						var commit = _serializer.Deserialize<AzureBlobCommit>(ms);
-						commits.Add(CreateCommitFromAzureBlobCommit(commit));
-					}
-				};
+				endPage += commitDefinition.TotalPagesUsed;
 			}
-			catch (Microsoft.WindowsAzure.Storage.StorageException ex)
-			{ throw HandleAndRemapCommonExceptions(ex); }
+
+			// download all the data
+			var downloadedData = pageBlob.DownloadBytes(startPage * _blobPageSize, endPage * _blobPageSize, AccessCondition.GenerateIfMatchCondition(pageBlob.Properties.ETag));
+
+			// process the downloaded data
+			var commits = new List<ICommit>();
+			for (int i = startIndex; i != startIndex + numberOfCommits; i++)
+			{
+				var commitStartIndex = (header.PageBlobCommitDefinitions[(int)i].StartPage - startPage) * _blobPageSize;
+				var commitSize = header.PageBlobCommitDefinitions[i].DataSizeBytes;
+				using (var ms = new MemoryStream(downloadedData, commitStartIndex, commitSize, false))
+				{
+					var commit = _serializer.Deserialize<AzureBlobCommit>(ms);
+					commits.Add(CreateCommitFromAzureBlobCommit(commit));
+				}
+			}
 
 			return commits;
+
 		}
 
 		/// <summary>
@@ -296,7 +283,7 @@ namespace NEventStore.Persistence.AzureBlob
 		{
 			// this is most likely extremely inefficient as the size of our store grows to 100's of millions of streams (possibly even just 1000's)
 			var containers = _blobClient.ListContainers();
-			var allCommitDefinitions = new List<Tuple<CloudPageBlob, PageBlobCommitDefinition>>();
+			var allCommitDefinitions = new List<Tuple<WrappedPageBlob, PageBlobCommitDefinition>>();
 
 			foreach (var container in containers)
 			{
@@ -312,14 +299,12 @@ namespace NEventStore.Persistence.AzureBlob
 
 				// this container is fetched lazily.  so actually filtering down at this level will improve our performance,
 				// assuming the options dictate a date range that filters down our set.
-				var blobs = container
-								.ListBlobs(useFlatBlobListing: true, blobListingDetails: BlobListingDetails.Metadata)
-								.OfType<CloudPageBlob>().OrderByDescending((x) => x.Properties.LastModified)
-								.Where((x) => x.Properties.LastModified > sinceDateUtc);
+				var pageBlobs = WrappedPageBlob.GetAllMatchinPrefix(container, null);
+				pageBlobs = pageBlobs.OrderByDescending((x) => x.Properties.LastModified).Where((x) => x.Properties.LastModified > sinceDateUtc);
 
 				// this could be a tremendous amount of data.  Depending on system used
 				// this may not be performant enough and may require some sort of index be built.
-				foreach (var pageBlob in blobs)
+				foreach (var pageBlob in pageBlobs)
 				{
 					if (pageBlob.Metadata.ContainsKey(_isEventStreamAggregateKey))
 					{
@@ -345,7 +330,7 @@ namespace NEventStore.Persistence.AzureBlob
 										foreach (var definition in header.PageBlobCommitDefinitions)
 										{
 											if (!definition.IsDispatched)
-											{ allCommitDefinitions.Add(new Tuple<CloudPageBlob, PageBlobCommitDefinition>(pageBlob, definition)); }
+											{ allCommitDefinitions.Add(new Tuple<WrappedPageBlob, PageBlobCommitDefinition>(pageBlob, definition)); }
 										}
 									}
 
@@ -379,18 +364,9 @@ namespace NEventStore.Persistence.AzureBlob
 		/// <param name="commit">The commit object to mark as dispatched.</param>
 		public void MarkCommitAsDispatched(ICommit commit)
 		{
-			var pageBlobReference = _blobContainer
-				.ListBlobs(commit.BucketId + "/" + commit.StreamId, true,
-				BlobListingDetails.Metadata).OfType<CloudPageBlob>().SingleOrDefault();
-
-			if (pageBlobReference == null)
-			{
-				Logger.Warn("tried to mark as dispatched commit that does not exist, commit id: ", commit.CommitId);
-				return;
-			}
-
-			var headerDefinitionMetadata = GetHeaderDefinitionMetadata(pageBlobReference);
-			var header = GetHeader(pageBlobReference, headerDefinitionMetadata);
+			var pageBlob = WrappedPageBlob.GetAssumingExists(_blobContainer, commit.BucketId + "/" + commit.StreamId);
+			var headerDefinitionMetadata = GetHeaderDefinitionMetadata(pageBlob);
+			var header = GetHeader(pageBlob, headerDefinitionMetadata);
 
 			// we must commit at a page offset, we will just track how many pages in we must start writing at
 			foreach (var commitDefinition in header.PageBlobCommitDefinitions)
@@ -402,7 +378,7 @@ namespace NEventStore.Persistence.AzureBlob
 				}
 			}
 
-			CommitNewMessage(pageBlobReference, null, header, headerDefinitionMetadata.HeaderStartLocationOffsetBytes);
+			CommitNewMessage(pageBlob, null, header, headerDefinitionMetadata.HeaderStartLocationOffsetBytes);
 		}
 
 		/// <summary>
@@ -453,9 +429,7 @@ namespace NEventStore.Persistence.AzureBlob
 		protected virtual void Dispose(bool disposing)
 		{
 			if (!disposing || _disposed)
-			{
-				return;
-			}
+			{ return; }
 
 			Logger.Debug("Disposing...");
 			_disposed = true;
@@ -468,13 +442,8 @@ namespace NEventStore.Persistence.AzureBlob
 		/// <returns>An Commit if successful.</returns>
 		public ICommit Commit(CommitAttempt attempt)
 		{
-			var pageBlobReference = _blobContainer
-				.ListBlobs(attempt.BucketId + "/" + attempt.StreamId, true,
-				BlobListingDetails.Metadata).OfType<CloudPageBlob>().SingleOrDefault();
-
-			if (pageBlobReference == null)
-			{ pageBlobReference = CreatePageBlobReference(_blobContainer, attempt.BucketId + "/" + attempt.StreamId); }
-			var header = GetHeader(pageBlobReference, null);
+			var pageBlob = WrappedPageBlob.CreateNewIfNotExists(_blobContainer, attempt.BucketId + "/" + attempt.StreamId);
+			var header = GetHeader(pageBlob, null);
 
 			// we must commit at a page offset, we will just track how many pages in we must start writing at
 			var startPage = 0;
@@ -505,7 +474,7 @@ namespace NEventStore.Persistence.AzureBlob
 			++header.UndispatchedCommitCount;
 			header.LastCommitSequence = attempt.CommitSequence;
 
-			CommitNewMessage(pageBlobReference, serializedBlobCommit, header, startPage * _blobPageSize);
+			CommitNewMessage(pageBlob, serializedBlobCommit, header, startPage * _blobPageSize);
 			return CreateCommitFromAzureBlobCommit(blobCommit);
 		}
 
@@ -544,21 +513,20 @@ namespace NEventStore.Persistence.AzureBlob
 		/// <param name="streamId"></param>
 		/// <param name="commitDefinition"></param>
 		/// <returns></returns>
-		private ICommit CreateCommitFromDefinition(CloudPageBlob blob, PageBlobCommitDefinition commitDefinition)
+		private ICommit CreateCommitFromDefinition(WrappedPageBlob blob, PageBlobCommitDefinition commitDefinition)
 		{
-			using (var ms = new MemoryStream(commitDefinition.DataSizeBytes))
+			var startIndex = commitDefinition.StartPage * _blobPageSize;
+			var endIndex = startIndex + commitDefinition.DataSizeBytes;
+			var downloadedData = blob.DownloadBytes(startIndex, endIndex);
+			using (var ms = new MemoryStream(downloadedData, false))
 			{
-				var startIndex = commitDefinition.StartPage * 512;
-				blob.DownloadRangeToStream(ms, startIndex, commitDefinition.DataSizeBytes);
-				ms.Position = 0;
-
 				AzureBlobCommit azureBlobCommit;
 				try
 				{ azureBlobCommit = _serializer.Deserialize<AzureBlobCommit>(ms); }
 				catch (Exception ex)
 				{
-					// we hope this does not happen
-					var message = string.Format("Blob with uri [{0}] is corrupt.", blob.Uri);
+					var message = string.Format("Blob with uri [{0}] is corrupt.", ((CloudPageBlob)blob).Uri);
+					Logger.Fatal(message);
 					throw new InvalidDataException(message, ex);
 				}
 
@@ -584,19 +552,14 @@ namespace NEventStore.Persistence.AzureBlob
 								blobEntry.Events);
 		}
 
-		private HeaderDefinitionMetadata GetHeaderDefinitionMetadata(CloudPageBlob blob)
+		private HeaderDefinitionMetadata GetHeaderDefinitionMetadata(WrappedPageBlob blob)
 		{
-			var headerDefinitionMetaDataOffset = blob.Properties.Length - _headerDefinitionMetadataBytes;
-			using (var ms = new MemoryStream(HeaderDefinitionMetadata.RawSize))
-			{
-				try
-				{
-					blob.DownloadRangeToStream(ms, headerDefinitionMetaDataOffset, HeaderDefinitionMetadata.RawSize, AccessCondition.GenerateIfMatchCondition(blob.Properties.ETag));
-					return HeaderDefinitionMetadata.FromRaw(ms.ToArray());
-				}
-				catch (Microsoft.WindowsAzure.Storage.StorageException ex)
-				{ throw HandleAndRemapCommonExceptions(ex); }
-			}
+			var definitionStartIndex = (int)((blob.Properties.Length / _blobPageSize) * 512) - _headerDefinitionMetadataBytes;
+			var downloadedData = blob.DownloadBytes(definitionStartIndex, definitionStartIndex + _headerDefinitionMetadataBytes,
+				AccessCondition.GenerateIfMatchCondition(blob.Properties.ETag));
+
+			using (var ms = new MemoryStream(downloadedData, 0, HeaderDefinitionMetadata.RawSize, false))
+			{ return HeaderDefinitionMetadata.FromRaw(ms.ToArray()); }
 		}
 
 		/// <summary>
@@ -605,29 +568,20 @@ namespace NEventStore.Persistence.AzureBlob
 		/// <param name="blob">The Blob.</param>
 		/// <param name="ignoreAccessCondition">true if the access condition check should be ignored... USE LIGHTLY</param>
 		/// <returns>A populated StreamBlobHeader.</returns>
-		private StreamBlobHeader GetHeader(CloudPageBlob blob, HeaderDefinitionMetadata prefetched)
+		private StreamBlobHeader GetHeader(WrappedPageBlob blob, HeaderDefinitionMetadata prefetched)
 		{
-			try
+			var headerDefinitionMetadata = prefetched ?? GetHeaderDefinitionMetadata(blob);
+			if (headerDefinitionMetadata.HeaderSizeInBytes != 0)
 			{
-				var headerDefinitionMetadata = prefetched ?? GetHeaderDefinitionMetadata(blob);
-				if (headerDefinitionMetadata.HeaderSizeInBytes != 0)
-				{
-					using (var ms = new MemoryStream(headerDefinitionMetadata.HeaderSizeInBytes))
-					{
-						try
-						{
-							blob.DownloadRangeToStream(ms, headerDefinitionMetadata.HeaderStartLocationOffsetBytes, headerDefinitionMetadata.HeaderSizeInBytes, AccessCondition.GenerateIfMatchCondition(blob.Properties.ETag));
-							return _serializer.Deserialize<StreamBlobHeader>(ms.ToArray());
-						}
-						catch (Microsoft.WindowsAzure.Storage.StorageException ex)
-						{ throw HandleAndRemapCommonExceptions(ex); }
-					}
-				}
-				else
-				{ return new StreamBlobHeader(); }
+				var downloadedData = blob.DownloadBytes(headerDefinitionMetadata.HeaderStartLocationOffsetBytes,
+					headerDefinitionMetadata.HeaderStartLocationOffsetBytes + headerDefinitionMetadata.HeaderSizeInBytes,
+					AccessCondition.GenerateIfMatchCondition(blob.Properties.ETag));
+
+				using (var ms = new MemoryStream(downloadedData, false))
+				{ return _serializer.Deserialize<StreamBlobHeader>(ms.ToArray()); }
 			}
-			catch (Microsoft.WindowsAzure.Storage.StorageException ex)
-			{ throw HandleAndRemapCommonExceptions(ex); }
+			else
+			{ return new StreamBlobHeader(); }
 		}
 
 		/// <summary>
@@ -642,23 +596,6 @@ namespace NEventStore.Persistence.AzureBlob
 		}
 
 		/// <summary>
-		/// Resized the blob to a specific size
-		/// </summary>
-		/// <param name="blob"></param>
-		/// <param name="neededSize"></param>
-		private void ResizeBlob(CloudPageBlob blob, int neededSize)
-		{
-			try
-			{
-				var currentSize = blob.Properties.Length;
-				var newSize = GetPageAlignedSize(neededSize);
-				blob.Resize(newSize, AccessCondition.GenerateIfMatchCondition(blob.Properties.ETag));
-			}
-			catch (Microsoft.WindowsAzure.Storage.StorageException ex)
-			{ throw HandleAndRemapCommonExceptions(ex); }
-		}
-
-		/// <summary>
 		/// Commits the header information which essentially commits any transactions that occured
 		/// related to that header.
 		/// </summary>
@@ -667,53 +604,47 @@ namespace NEventStore.Persistence.AzureBlob
 		/// <param name="blob">blob header applies to</param>
 		/// <param name="header">the new header data</param>
 		/// <returns></returns>
-		private void CommitNewMessage(CloudPageBlob blob, byte[] newCommit, StreamBlobHeader header, int offsetBytes)
+		private void CommitNewMessage(WrappedPageBlob blob, byte[] newCommit, StreamBlobHeader header, int offsetBytes)
 		{
-			try
+			newCommit = newCommit ?? new byte[0];
+
+			blob.Metadata[_isEventStreamAggregateKey] = "yes";
+			blob.Metadata[_hasUndispatchedCommitsKey] = header.PageBlobCommitDefinitions.Any((x) => !x.IsDispatched).ToString();
+			blob.SetMetadata(AccessCondition.GenerateIfMatchCondition(blob.Properties.ETag));
+
+			var serialized = _serializer.Serialize(header);
+			var writeStartLocationAligned = GetPageAlignedSize(offsetBytes);
+			var totalSpaceNeededAligned = GetPageAlignedSize(writeStartLocationAligned + newCommit.Length + serialized.Length + _headerDefinitionMetadataBytes);
+
+			var totalBlobLength = blob.Properties.Length;
+			if (totalBlobLength < totalSpaceNeededAligned)
 			{
-				newCommit = newCommit ?? new byte[0];
-
-				blob.Metadata[_isEventStreamAggregateKey] = "yes";
-				blob.Metadata[_hasUndispatchedCommitsKey] = header.PageBlobCommitDefinitions.Any((x) => !x.IsDispatched).ToString();
-				blob.SetMetadata(AccessCondition.GenerateIfMatchCondition(blob.Properties.ETag));
-
-				var serialized = _serializer.Serialize(header);
-				var writeStartLocationAligned = GetPageAlignedSize(offsetBytes);
-				var totalSpaceNeededAligned = GetPageAlignedSize(writeStartLocationAligned + newCommit.Length + serialized.Length + _headerDefinitionMetadataBytes);
-
-				var totalBlobLength = blob.Properties.Length;
-				if (totalBlobLength < totalSpaceNeededAligned)
-				{
-					ResizeBlob(blob, totalSpaceNeededAligned);
-					totalBlobLength = blob.Properties.Length;
-				}
-
-				var writeSize = totalBlobLength - writeStartLocationAligned;
-				using (var ms = new MemoryStream((int)writeSize))
-				{
-					ms.Write(newCommit, 0, newCommit.Length);
-					ms.Write(serialized, 0, serialized.Length);
-
-					var remainder = (ms.Position % _blobPageSize);
-					var fillSpace = writeSize - newCommit.Length - serialized.Length - _headerDefinitionMetadataBytes;
-					ms.Position += fillSpace;
-					//ms.Write(_maxFillSpace, 0, (int)fillSpace);
-
-					var headerDefinitionMetadata = new HeaderDefinitionMetadata();
-					headerDefinitionMetadata.HasUndispatchedCommits = header.PageBlobCommitDefinitions.Any((x) => !x.IsDispatched);
-					headerDefinitionMetadata.HeaderSizeInBytes = serialized.Length;
-					headerDefinitionMetadata.HeaderStartLocationOffsetBytes = writeStartLocationAligned + newCommit.Length;
-					var rawHeaderDefinitionMetadata = headerDefinitionMetadata.GetRaw();
-					ms.Write(rawHeaderDefinitionMetadata, 0, rawHeaderDefinitionMetadata.Length);
-					fillSpace = _headerDefinitionMetadataBytes - rawHeaderDefinitionMetadata.Length;
-					ms.Write(_maxFillSpace, 0, (int)fillSpace);
-
-					ms.Position = 0;
-					blob.WritePages(ms, writeStartLocationAligned, accessCondition: AccessCondition.GenerateIfMatchCondition(blob.Properties.ETag));
-				}
+				blob.Resize(totalSpaceNeededAligned);
+				totalBlobLength = blob.Properties.Length;
 			}
-			catch (Microsoft.WindowsAzure.Storage.StorageException ex)
-			{ throw HandleAndRemapCommonExceptions(ex); }
+
+			var writeSize = totalBlobLength - writeStartLocationAligned;
+			using (var ms = new MemoryStream((int)writeSize))
+			{
+				ms.Write(newCommit, 0, newCommit.Length);
+				ms.Write(serialized, 0, serialized.Length);
+
+				var remainder = (ms.Position % _blobPageSize);
+				var fillSpace = writeSize - newCommit.Length - serialized.Length - _headerDefinitionMetadataBytes;
+				ms.Position += fillSpace;
+
+				var headerDefinitionMetadata = new HeaderDefinitionMetadata();
+				headerDefinitionMetadata.HasUndispatchedCommits = header.PageBlobCommitDefinitions.Any((x) => !x.IsDispatched);
+				headerDefinitionMetadata.HeaderSizeInBytes = serialized.Length;
+				headerDefinitionMetadata.HeaderStartLocationOffsetBytes = writeStartLocationAligned + newCommit.Length;
+				var rawHeaderDefinitionMetadata = headerDefinitionMetadata.GetRaw();
+				ms.Write(rawHeaderDefinitionMetadata, 0, rawHeaderDefinitionMetadata.Length);
+				fillSpace = _headerDefinitionMetadataBytes - rawHeaderDefinitionMetadata.Length;
+				ms.Write(_maxFillSpace, 0, (int)fillSpace);
+
+				ms.Position = 0;
+				blob.Write(ms, writeStartLocationAligned, accessCondition: AccessCondition.GenerateIfMatchCondition(blob.Properties.ETag));
+			}
 		}
 
 		/// <summary>
@@ -724,74 +655,45 @@ namespace NEventStore.Persistence.AzureBlob
 		{ return _eventSourcePrefix + _options.ContainerName.ToLower(); }
 
 		/// <summary>
-		/// Tries to fetch a blob's attributes.  Creates the blob if it does not exist.
-		/// </summary>
-		/// <param name="blob">The blob.</param>
-		private CloudPageBlob CreatePageBlobReference(CloudBlobContainer cloudBlobContainer, string blobName)
-		{
-			var pageBlobReference = cloudBlobContainer.GetPageBlobReference(blobName);
-			pageBlobReference.Create((long)512);
-			pageBlobReference.FetchAttributes();
-			return pageBlobReference;
-		}
-
-		/// <summary>
 		/// Gets the next checkpoint id
 		/// </summary>
 		/// <returns></returns>
 		private uint GetNextCheckpoint()
 		{
-			var blobContainer2 = _blobClient.GetContainerReference(_rootContainerName);
+			var blobContainer = _blobClient.GetContainerReference(_rootContainerName);
+			var checkpointBlob = WrappedPageBlob.GetAssumingExists(blobContainer, _checkpointBlobName);
 
-			var pageBlobReference = blobContainer2
-				.ListBlobs(_checkpointBlobName, true,
-				BlobListingDetails.Metadata).OfType<CloudPageBlob>().SingleOrDefault();
+			if (checkpointBlob == null)
+			{ checkpointBlob = WrappedPageBlob.CreateNew(blobContainer, _checkpointBlobName); }
 
-			if (pageBlobReference == null)
-			{ pageBlobReference = CreatePageBlobReference(blobContainer2, _checkpointBlobName); }
-
-			string serializedCheckpointNumber;
 			uint nextCheckpoint = 1;
-			if (pageBlobReference.Metadata.TryGetValue(_checkpointNumberKey, out serializedCheckpointNumber))
-			{ nextCheckpoint = Convert.ToUInt32(serializedCheckpointNumber) + 1; }
-
 			while (true)
 			{
 				try
 				{
-					pageBlobReference.Metadata[_checkpointNumberKey] = (nextCheckpoint).ToString();
-					pageBlobReference.SetMetadata(AccessCondition.GenerateIfMatchCondition(pageBlobReference.Properties.ETag));
+					string serializedCheckpointNumber;
+					if (checkpointBlob.Metadata.TryGetValue(_checkpointNumberKey, out serializedCheckpointNumber))
+					{
+						nextCheckpoint = Convert.ToUInt32(serializedCheckpointNumber) + 1;
+						checkpointBlob.Metadata[_checkpointNumberKey] = nextCheckpoint.ToString();
+					}
+
+					checkpointBlob.SetMetadata(AccessCondition.GenerateIfMatchCondition(checkpointBlob.Properties.ETag));
 					break;
 				}
-				catch (Microsoft.WindowsAzure.Storage.StorageException ex)
+				catch (ConcurrencyException)
 				{
-					if (ex.Message.Contains("412"))
+					if (_options.ForceUniqueCheckpoint)
 					{
-						if (_options.ForceUniqueCheckpoint)
-						{
-							Logger.Warn("Unique checkpoint fetch failed.  Trying again.  If this happens frequently it could have significant impacts on system performance.  It may warrent turning off forcing of unique checkpoints.");
-							pageBlobReference.FetchAttributes();
-
-							if (pageBlobReference.Metadata.TryGetValue(_checkpointNumberKey, out serializedCheckpointNumber))
-							{ nextCheckpoint = Convert.ToUInt32(serializedCheckpointNumber) + 1; }
-						}
-						else
-						{ break; }
+						Logger.Warn("Unique checkpoint fetch failed.  Trying again.  If this happens frequently it could have significant impacts on system performance.  It may warrent turning off forcing of unique checkpoints.");
+						checkpointBlob.RefetchAttributes();
 					}
 					else
-					{ throw; }
+					{ break; }
 				}
 			}
 
 			return nextCheckpoint;
-		}
-
-		private Exception HandleAndRemapCommonExceptions(Microsoft.WindowsAzure.Storage.StorageException ex)
-		{
-			if (ex.Message.Contains("412"))
-			{ return new ConcurrencyException("concurrency exception in markcommitasdispachted", ex); }
-			else
-			{ return ex; }
 		}
 
 		#endregion

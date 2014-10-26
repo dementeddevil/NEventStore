@@ -1,14 +1,16 @@
 ﻿using System;
-using System.Collections.Generic;
 using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
 using NEventStore;
+using NLog;
 
 namespace AlphaTester
 {
 	class Program
 	{
+		private static readonly Logger _log = LogManager.GetCurrentClassLogger(typeof(Program));
+
 		static void Main(string[] args)
 		{
 			var repoType = eRepositoryType.AzureBlob;
@@ -23,25 +25,24 @@ namespace AlphaTester
 			{ num = Convert.ToInt32(args[1]); }
 
 			var startTime = DateTime.UtcNow;
-			Console.WriteLine("Initializing [{0}] Repository", repoType);
+			_log.Trace("Initializing [{0}] Repository", repoType);
 			var initSw = new Stopwatch();
 			initSw.Start();
 			var repoInit = new TestRepository(repoType);
 			var dontCare = repoInit.GetSimpleAggregateById(Guid.NewGuid(), Int32.MaxValue);
 			initSw.Stop();
-			Console.WriteLine("Took {0} to init", initSw.Elapsed.ToString());
+			_log.Trace("Took {0} to init", initSw.Elapsed.ToString());
 
 
 			var options = new ParallelOptions();
 			options.MaxDegreeOfParallelism = 10;
-			var eventNum = 50;
+			var eventNum = 5;
 			Guid start = Guid.NewGuid();
 			Parallel.For(0, num, options, (i) =>
 			{
 				Stopwatch sw = new Stopwatch();
 				sw.Start();
 				
-
 				var repo = new TestRepository(repoType);
 
 				Stopwatch creationTimer = new Stopwatch();
@@ -58,11 +59,11 @@ namespace AlphaTester
 					try
 					{ RetryWhileConcurrent(repoType, start, i, j); }
 					catch (Exception ex)
-					{ Console.WriteLine("error iteration {0}-{1}, {2}", i, j, ex.ToString()); }
+					{ _log.Error("error iteration {0}-{1}, {2}", i, j, ex.ToString()); }
 
 				}//);
 
-				Console.WriteLine(string.Format("Iteration [{0}] took me [{1}] ms", i, sw.ElapsedMilliseconds));
+				_log.Trace(string.Format("Iteration [{0}] took me [{1}] ms", i, sw.ElapsedMilliseconds));
 			});
 
 			// Check that aggy is still valid
@@ -74,13 +75,13 @@ namespace AlphaTester
 				for (int i = 0; i < eventNum; ++i)
 				{
 					if (!listOfInts.Contains(i))
-					{ Console.WriteLine("Aggy missing value {0}.  Event not rehydrated correctly", i); }
+					{ _log.Error("Aggy missing value {0}.  Event not rehydrated correctly", i); }
 				}
 
-				Console.WriteLine("Aggy check done, id: {0}", start);
+				_log.Info("Aggy check done, id: {0}", start);
 			}
 			catch (Exception ex)
-			{ Console.WriteLine("error in aggy valid check, {0}", ex.ToString()); }
+			{ _log.Error("error in aggy valid check, {0}", ex.ToString()); }
 		}
 
 		private static void RetryWhileConcurrent(eRepositoryType repoType, Guid aggyId, int rootIndex, int subIndex)
@@ -94,18 +95,20 @@ namespace AlphaTester
 					Stopwatch sw = new Stopwatch();
 					sw.Start();
 
+					_log.Trace("{0}-{1} - Getting Aggregate");
 					var repo = new TestRepository(repoType);
 					var aggy = repo.GetSimpleAggregateById(aggyId, 0);
 					aggy.ChangeFoo(subIndex);
+
+					_log.Trace("{0}-{1} - Saving Aggregate");
 					repo.Save(aggy, Guid.NewGuid(), null);
 
-					sw.Stop();
-					Console.WriteLine("finished {0}-{1} in {2}", rootIndex, subIndex, sw.Elapsed);
+					_log.Trace("{0}-{1} - Finished in {2}", rootIndex, subIndex, sw.Elapsed);
 					break;
 				}
 				catch (ConcurrencyException)
 				{
-					Console.WriteLine("Concurrency Detected, will retry shortly");
+					_log.Trace("Concurrency Detected, will retry shortly");
 					Thread.Sleep(random.Next(0, 200));	// this is to increase race condition likelyhood
 				}
 			}

@@ -29,12 +29,9 @@ namespace NEventStore.Persistence.AzureBlob
 		private const string _checkpointNumberKey = "checkpointnumber";
 		private const string _hasUndispatchedCommitsKey = "hasUndispatchedCommits";
 		private const string _isEventStreamAggregateKey = "isEventStreamAggregate";
+		private const string _headerDefinitionKey = "headerDefinition";
 
 		private const int _blobPageSize = 512;
-		private const int _headerDefinitionMetadataPages = (HeaderDefinitionMetadata.RawSize / _blobPageSize) + 1;
-		private const int _headerDefinitionMetadataBytes = _headerDefinitionMetadataPages * _blobPageSize;
-		private static byte[] _maxFillSpace = new byte[5096];
-
 		private readonly ISerialize _serializer;
 		private readonly AzureBlobPersistenceOptions _options;
 		private readonly CloudBlobContainer _blobContainer;
@@ -552,14 +549,27 @@ namespace NEventStore.Persistence.AzureBlob
 								blobEntry.Events);
 		}
 
+		/// <summary>
+		/// Gets the metadata header
+		/// </summary>
+		/// <param name="blob"></param>
+		/// <returns></returns>
 		private HeaderDefinitionMetadata GetHeaderDefinitionMetadata(WrappedPageBlob blob)
 		{
-			var definitionStartIndex = (int)((blob.Properties.Length / _blobPageSize) * 512) - _headerDefinitionMetadataBytes;
-			var downloadedData = blob.DownloadBytes(definitionStartIndex, definitionStartIndex + _headerDefinitionMetadataBytes,
-				AccessCondition.GenerateIfMatchCondition(blob.Properties.ETag));
+			//var definitionStartIndex = (int)((blob.Properties.Length / _blobPageSize) * 512) - _headerDefinitionMetadataBytes;
+			//var downloadedData = blob.DownloadBytes(definitionStartIndex, definitionStartIndex + _headerDefinitionMetadataBytes,
+			//	AccessCondition.GenerateIfMatchCondition(blob.Properties.ETag));
 
-			using (var ms = new MemoryStream(downloadedData, 0, HeaderDefinitionMetadata.RawSize, false))
-			{ return HeaderDefinitionMetadata.FromRaw(ms.ToArray()); }
+			//using (var ms = new MemoryStream(downloadedData, 0, HeaderDefinitionMetadata.RawSize, false))
+			//{ return HeaderDefinitionMetadata.FromRaw(ms.ToArray()); }
+
+			HeaderDefinitionMetadata headerDefinition;
+			string serializedHeaderDefinition;
+			if (blob.Metadata.TryGetValue(_headerDefinitionKey, out serializedHeaderDefinition))
+			{ headerDefinition = HeaderDefinitionMetadata.FromRaw(Convert.FromBase64String(serializedHeaderDefinition)); }
+			else
+			{ headerDefinition = new HeaderDefinitionMetadata(); }
+			return headerDefinition;
 		}
 
 		/// <summary>
@@ -607,44 +617,46 @@ namespace NEventStore.Persistence.AzureBlob
 		private void CommitNewMessage(WrappedPageBlob blob, byte[] newCommit, StreamBlobHeader header, int offsetBytes)
 		{
 			newCommit = newCommit ?? new byte[0];
-
-			blob.Metadata[_isEventStreamAggregateKey] = "yes";
-			blob.Metadata[_hasUndispatchedCommitsKey] = header.PageBlobCommitDefinitions.Any((x) => !x.IsDispatched).ToString();
-			blob.SetMetadata(AccessCondition.GenerateIfMatchCondition(blob.Properties.ETag));
-
 			var serialized = _serializer.Serialize(header);
 			var writeStartLocationAligned = GetPageAlignedSize(offsetBytes);
-			var totalSpaceNeededAligned = GetPageAlignedSize(writeStartLocationAligned + newCommit.Length + serialized.Length + _headerDefinitionMetadataBytes);
+			var amountToWriteAligned = GetPageAlignedSize(serialized.Length + newCommit.Length);
+			var totalSpaceNeeded = writeStartLocationAligned + amountToWriteAligned;
 
 			var totalBlobLength = blob.Properties.Length;
-			if (totalBlobLength < totalSpaceNeededAligned)
+			if (totalBlobLength < totalSpaceNeeded)
 			{
-				blob.Resize(totalSpaceNeededAligned);
+				blob.Resize(totalSpaceNeeded);
 				totalBlobLength = blob.Properties.Length;
 			}
 
-			var writeSize = totalBlobLength - writeStartLocationAligned;
-			using (var ms = new MemoryStream((int)writeSize))
+
+			using (var ms = new MemoryStream(amountToWriteAligned))
 			{
 				ms.Write(newCommit, 0, newCommit.Length);
 				ms.Write(serialized, 0, serialized.Length);
 
 				var remainder = (ms.Position % _blobPageSize);
-				var fillSpace = writeSize - newCommit.Length - serialized.Length - _headerDefinitionMetadataBytes;
-				ms.Position += fillSpace;
+				var fillSpace = amountToWriteAligned - newCommit.Length - serialized.Length;
 
-				var headerDefinitionMetadata = new HeaderDefinitionMetadata();
-				headerDefinitionMetadata.HasUndispatchedCommits = header.PageBlobCommitDefinitions.Any((x) => !x.IsDispatched);
-				headerDefinitionMetadata.HeaderSizeInBytes = serialized.Length;
-				headerDefinitionMetadata.HeaderStartLocationOffsetBytes = writeStartLocationAligned + newCommit.Length;
-				var rawHeaderDefinitionMetadata = headerDefinitionMetadata.GetRaw();
-				ms.Write(rawHeaderDefinitionMetadata, 0, rawHeaderDefinitionMetadata.Length);
-				fillSpace = _headerDefinitionMetadataBytes - rawHeaderDefinitionMetadata.Length;
-				ms.Write(_maxFillSpace, 0, (int)fillSpace);
+				if (fillSpace != 0)
+				{
+					ms.Position += fillSpace - 1;
+					ms.WriteByte(0);
+				}
 
 				ms.Position = 0;
 				blob.Write(ms, writeStartLocationAligned, accessCondition: AccessCondition.GenerateIfMatchCondition(blob.Properties.ETag));
 			}
+
+			// set the header definition to make it all official
+			var headerDefinitionMetadata = new HeaderDefinitionMetadata();
+			headerDefinitionMetadata.HasUndispatchedCommits = header.PageBlobCommitDefinitions.Any((x) => !x.IsDispatched);
+			headerDefinitionMetadata.HeaderSizeInBytes = serialized.Length;
+			headerDefinitionMetadata.HeaderStartLocationOffsetBytes = writeStartLocationAligned + newCommit.Length;
+			blob.Metadata[_isEventStreamAggregateKey] = "yes";
+			blob.Metadata[_hasUndispatchedCommitsKey] = header.PageBlobCommitDefinitions.Any((x) => !x.IsDispatched).ToString();
+			blob.Metadata[_headerDefinitionKey] = Convert.ToBase64String(headerDefinitionMetadata.GetRaw());
+			blob.SetMetadata(AccessCondition.GenerateIfMatchCondition(blob.Properties.ETag));
 		}
 
 		/// <summary>

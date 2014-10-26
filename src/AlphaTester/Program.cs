@@ -20,23 +20,14 @@ namespace AlphaTester
 				{ repoType = eRepositoryType.Sql; }
 			}
 
-			var num = 1;
+			var num = 10;
 			if (args.Length > 1)
 			{ num = Convert.ToInt32(args[1]); }
 
 			var startTime = DateTime.UtcNow;
-			_log.Trace("Initializing [{0}] Repository", repoType);
-			var initSw = new Stopwatch();
-			initSw.Start();
-			var repoInit = new TestRepository(repoType);
-			var dontCare = repoInit.GetSimpleAggregateById(Guid.NewGuid(), Int32.MaxValue);
-			initSw.Stop();
-			_log.Trace("Took {0} to init", initSw.Elapsed.ToString());
-
-
 			var options = new ParallelOptions();
 			options.MaxDegreeOfParallelism = 10;
-			var eventNum = 5;
+			var eventNum = 25;
 			Guid start = Guid.NewGuid();
 			Parallel.For(0, num, options, (i) =>
 			{
@@ -50,7 +41,7 @@ namespace AlphaTester
 				var aggy = SimpleAggregate.CreateNew(DateTime.Now, start, 42);
 				repo.Save(aggy, Guid.NewGuid(), null);
 				creationTimer.Stop();
-				Console.WriteLine("Create aggy in [{0}]", creationTimer.Elapsed);
+				_log.Trace("Create aggy in [{0}]", creationTimer.Elapsed);
 
 				Random random = new Random();
 				for (int j = 0; j != eventNum; ++j)

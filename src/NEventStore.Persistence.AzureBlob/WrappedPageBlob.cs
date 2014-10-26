@@ -53,6 +53,8 @@ namespace NEventStore.Persistence.AzureBlob
 		/// <returns></returns>
 		public static IEnumerable<WrappedPageBlob> GetAllMatchinPrefix(CloudBlobContainer blobContainer, string prefix)
 		{
+			Logger.Verbose("Getting all blobs with prefix [{0}]", prefix);
+
 			var pageBlobs = blobContainer
 				.ListBlobs(prefix, true, BlobListingDetails.Metadata).OfType<CloudPageBlob>();
 
@@ -68,6 +70,7 @@ namespace NEventStore.Persistence.AzureBlob
 		/// <returns></returns>
 		public static WrappedPageBlob GetAssumingExists(CloudBlobContainer blobContainer, string blobId)
 		{
+			Logger.Verbose("Getting blob with id [{0}]", blobId);
 			var pageBlob = blobContainer
 				.ListBlobs(blobId, true, BlobListingDetails.Metadata).OfType<CloudPageBlob>()
 				.SingleOrDefault();
@@ -83,6 +86,7 @@ namespace NEventStore.Persistence.AzureBlob
 		/// <returns></returns>
 		public static WrappedPageBlob CreateNew(CloudBlobContainer blobContainer, string blobId)
 		{
+			Logger.Verbose("Creating new blob with id [{0}]", blobId);
 			var pageBlob = blobContainer.GetPageBlobReference(blobId);
 			pageBlob.Create((long)512);
 			pageBlob.FetchAttributes();
@@ -195,8 +199,9 @@ namespace NEventStore.Persistence.AzureBlob
 			Logger.Verbose("Resizing page blob");
 			try
 			{
-				var currentSize = _pageBlob.Properties.Length;
-				var newSize = GetPageAlignedSize(neededSize);
+				// we are going to grow by 50%
+				var newSize = (int)Math.Floor(neededSize * 1.5);
+				newSize = GetPageAlignedSize(neededSize);
 				_pageBlob.Resize(newSize, AccessCondition.GenerateIfMatchCondition(_pageBlob.Properties.ETag));
 			}
 			catch (Microsoft.WindowsAzure.Storage.StorageException ex)

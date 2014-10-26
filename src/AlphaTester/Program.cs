@@ -1,4 +1,6 @@
 ﻿using System;
+using System.Collections.Concurrent;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
@@ -20,17 +22,20 @@ namespace AlphaTester
 				{ repoType = eRepositoryType.Sql; }
 			}
 
-			var num = 10;
+			var eventsPerAggregate = 20;
+			var aggregatesToMake = 5;
 			if (args.Length > 1)
-			{ num = Convert.ToInt32(args[1]); }
+			{ aggregatesToMake = Convert.ToInt32(args[1]); }
+
+			var history = new ConcurrentBag<Tuple<Guid, ConcurrentBag<int>>>();
 
 			var startTime = DateTime.UtcNow;
 			var options = new ParallelOptions();
 			options.MaxDegreeOfParallelism = 10;
-			var eventNum = 25;
-			Guid start = Guid.NewGuid();
-			Parallel.For(0, num, options, (i) =>
+			Parallel.For(0, aggregatesToMake, options, (i) =>
 			{
+				var aggregateId = Guid.NewGuid();
+				var values = new ConcurrentBag<int>();
 				Stopwatch sw = new Stopwatch();
 				sw.Start();
 				
@@ -38,71 +43,81 @@ namespace AlphaTester
 
 				Stopwatch creationTimer = new Stopwatch();
 				creationTimer.Start();
-				var aggy = SimpleAggregate.CreateNew(DateTime.Now, start, 42);
+				values.Add(42);
+				var aggy = SimpleAggregate.CreateNew(DateTime.Now, aggregateId, 42);
 				repo.Save(aggy, Guid.NewGuid(), null);
 				creationTimer.Stop();
 				_log.Trace("Create aggy in [{0}]", creationTimer.Elapsed);
 
 				Random random = new Random();
-				for (int j = 0; j != eventNum; ++j)
+				for (int j = 0; j != eventsPerAggregate; ++j)
 				//Parallel.For(0, eventNum, options, (j) =>
 				{
+					values.Add(j);
 					try
-					{ RetryWhileConcurrent(repoType, start, i, j); }
+					{ RetryWhileConcurrent(repoType, aggy.Id, j); }
 					catch (Exception ex)
 					{ _log.Error("error iteration {0}-{1}, {2}", i, j, ex.ToString()); }
 
 				}//);
 
+				history.Add(new Tuple<Guid, ConcurrentBag<int>>(aggregateId, values));
 				_log.Trace(string.Format("Iteration [{0}] took me [{1}] ms", i, sw.ElapsedMilliseconds));
 			});
 
-			// Check that aggy is still valid
-			try
+			var totalTime = DateTime.UtcNow.Subtract(startTime);
+			_log.Info("Checkking aggregates for errors");
+			foreach (var historyItem in history)
 			{
-				var repo = new TestRepository(repoType);
-				var aggy = repo.GetSimpleAggregateById(start, 0);
-				var listOfInts = aggy.FooHolder;
-				for (int i = 0; i < eventNum; ++i)
-				{
-					if (!listOfInts.Contains(i))
-					{ _log.Error("Aggy missing value {0}.  Event not rehydrated correctly", i); }
-				}
-
-				_log.Info("Aggy check done, id: {0}", start);
+				var repository = new TestRepository(repoType);
+				CheckAggregate(repository, historyItem.Item1, historyItem.Item2);
 			}
-			catch (Exception ex)
-			{ _log.Error("error in aggy valid check, {0}", ex.ToString()); }
+			_log.Info("Took [{0}]", totalTime);
 		}
 
-		private static void RetryWhileConcurrent(eRepositoryType repoType, Guid aggyId, int rootIndex, int subIndex)
+		private static void RetryWhileConcurrent(eRepositoryType repoType, Guid aggyId, int value)
 		{
 			while (true)
 			{
-				Random random = new Random();
-
 				try
 				{
 					Stopwatch sw = new Stopwatch();
 					sw.Start();
 
-					_log.Trace("{0}-{1} - Getting Aggregate");
+					_log.Trace("Getting Aggregate [{0}]", aggyId);
 					var repo = new TestRepository(repoType);
 					var aggy = repo.GetSimpleAggregateById(aggyId, 0);
-					aggy.ChangeFoo(subIndex);
+					aggy.ChangeFoo(value);
 
-					_log.Trace("{0}-{1} - Saving Aggregate");
+					_log.Trace("Saving Aggregate [{0}]", aggyId);
 					repo.Save(aggy, Guid.NewGuid(), null);
 
-					_log.Trace("{0}-{1} - Finished in {2}", rootIndex, subIndex, sw.Elapsed);
+					_log.Trace("Saved Aggregate [{0}]", aggyId);
 					break;
 				}
 				catch (ConcurrencyException)
 				{
 					_log.Trace("Concurrency Detected, will retry shortly");
-					Thread.Sleep(random.Next(0, 200));	// this is to increase race condition likelyhood
+					var rand = new Random();
+					Thread.Sleep(rand.Next(0, 200));	// this is to increase race condition likelyhood
 				}
 			}
+		}
+
+		private static void CheckAggregate(TestRepository repository, Guid aggregateId, IEnumerable<int> valuesItShouldHave)
+		{
+			var isGood = true;
+			var aggy = repository.GetSimpleAggregateById(aggregateId, 0);
+			foreach (var valueItShouldHave in valuesItShouldHave)
+			{
+				if (!aggy.FooHolder.Contains(valueItShouldHave))
+				{
+					_log.Error("Aggy [{0}] missing value [{1}].  There is something wrong!!!", aggregateId, valueItShouldHave);
+					isGood = false;
+				}
+			}
+
+			_log.Info("Aggregate [{0}] is {1}good", aggregateId, isGood ? string.Empty : "NOT ");
 		}
 	}
 }

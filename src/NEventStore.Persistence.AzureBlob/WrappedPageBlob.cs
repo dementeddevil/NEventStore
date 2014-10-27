@@ -4,6 +4,7 @@ using System.IO;
 using System.Linq;
 using Microsoft.WindowsAzure.Storage;
 using Microsoft.WindowsAzure.Storage.Blob;
+using Microsoft.WindowsAzure.Storage.RetryPolicies;
 using NEventStore.Logging;
 using AzureStorage = Microsoft.WindowsAzure.Storage;
 
@@ -88,7 +89,7 @@ namespace NEventStore.Persistence.AzureBlob
 		{
 			Logger.Verbose("Creating new blob with id [{0}]", blobId);
 			var pageBlob = blobContainer.GetPageBlobReference(blobId);
-			pageBlob.Create((long)512);
+			pageBlob.Create((long)512*2000);
 			pageBlob.FetchAttributes();
 			return new WrappedPageBlob(pageBlob);
 		}
@@ -103,15 +104,9 @@ namespace NEventStore.Persistence.AzureBlob
 		/// <param name="wrapped"></param>
 		/// <returns></returns>
 		public static implicit operator CloudPageBlob(WrappedPageBlob wrapped)
-		{ return wrapped.PageBlob; }
+		{ return wrapped._pageBlob; }
 
 		#endregion
-
-		/// <summary>
-		/// returns the wrapped page blob
-		/// </summary>
-		private CloudPageBlob PageBlob
-		{ get { return _pageBlob; } }
 
 		/// <summary>
 		/// Gets the actual page blob metadata.
@@ -140,7 +135,10 @@ namespace NEventStore.Persistence.AzureBlob
 		public void RefetchAttributes(AccessCondition accessCondition = null)
 		{
 			try
-			{ _pageBlob.FetchAttributes(accessCondition); }
+			{
+				Logger.Verbose("Fetching attributes for blob [{0}]", _pageBlob.Uri);
+				_pageBlob.FetchAttributes(accessCondition);
+			}
 			catch (AzureStorage.StorageException ex)
 			{ throw HandleAndRemapCommonExceptions(ex); }
 		}
@@ -149,14 +147,16 @@ namespace NEventStore.Persistence.AzureBlob
 		/// Sets the metadata that is currently set
 		/// </summary>
 		/// <param name="accessCondition"></param>
-		public void SetMetadata(AccessCondition accessCondition = null)
+		public void SetMetadata()
 		{
-			Logger.Verbose("Setting metadata");
+			Logger.Verbose("Setting metadata for blob [{0}], etag [{1}]", _pageBlob.Uri, _pageBlob.Properties.ETag);
 
 			try
-			{ _pageBlob.SetMetadata(accessCondition); }
+			{ _pageBlob.SetMetadata(AccessCondition.GenerateIfMatchCondition(_pageBlob.Properties.ETag)); }
 			catch (AzureStorage.StorageException ex)
 			{ throw HandleAndRemapCommonExceptions(ex); }
+
+			Logger.Verbose("Set metadata for blob [{0}], etag [{1}]", _pageBlob.Uri, _pageBlob.Properties.ETag);
 		}
 
 		/// <summary>
@@ -166,13 +166,15 @@ namespace NEventStore.Persistence.AzureBlob
 		/// <param name="endPage">end page</param>
 		/// <param name="accessCondition">access conditions</param>
 		/// <returns></returns>
-		public byte[] DownloadBytes(int startIndex, int endIndex, AccessCondition accessCondition = null)
+		public byte[] DownloadBytes(int startIndex, int endIndex)
 		{
 			try
 			{
 				var data = new byte[endIndex - startIndex];
-				Logger.Verbose("Downloading [{0}] bytes", data.Length);
-				_pageBlob.DownloadRangeToByteArray(data, 0, startIndex, data.Length, accessCondition);
+				Logger.Verbose("Downloading [{0}] bytes for blob [{1}], etag [{2}]", data.Length, _pageBlob.Uri, _pageBlob.Properties.ETag);
+				var bytesDownloaded = _pageBlob.DownloadRangeToByteArray(data, 0, startIndex, data.Length,
+					AccessCondition.GenerateIfMatchCondition(_pageBlob.Properties.ETag));
+				Logger.Verbose("Downloaded [{0}] bytes for blob [{1}], etag [{2}]", data.Length, _pageBlob.Uri, _pageBlob.Properties.ETag);
 				return data;
 			}
 			catch (AzureStorage.StorageException ex)
@@ -185,24 +187,33 @@ namespace NEventStore.Persistence.AzureBlob
 		/// <param name="pageData">must be page size</param>
 		/// <param name="startOffset">must be page aligned</param>
 		/// <param name="accessCondition"></param>
-		public void Write(Stream pageData, int startOffset, AccessCondition accessCondition = null)
+		public void Write(Stream pageData, int startOffset)
 		{
-			Logger.Verbose("Writing [{0}] bytes", pageData.Length);
 			try
-			{ _pageBlob.WritePages(pageData, startOffset, accessCondition: accessCondition); }
+			{
+				Logger.Verbose("Writing [{0}] bytes for blob [{1}], etag [{2}]", pageData.Length, _pageBlob.Uri, _pageBlob.Properties.ETag);
+				_pageBlob.WritePages(pageData, startOffset, null,
+					AccessCondition.GenerateIfMatchCondition(_pageBlob.Properties.ETag));
+				Logger.Verbose("Wrote [{0}] bytes for blob [{1}], etag [{2}]", pageData.Length, _pageBlob.Uri, _pageBlob.Properties.ETag);
+			}
 			catch (AzureStorage.StorageException ex)
 			{ throw HandleAndRemapCommonExceptions(ex); }
 		}
 
+		/// <summary>
+		/// Resized the blob
+		/// </summary>
+		/// <param name="neededSize"></param>
 		public void Resize(int neededSize)
 		{
-			Logger.Verbose("Resizing page blob");
 			try
 			{
+				Logger.Verbose("Resizing page blob [{0}], etag [{1}]", _pageBlob.Uri, _pageBlob.Properties.ETag);
 				// we are going to grow by 50%
 				var newSize = (int)Math.Floor(neededSize * 1.5);
 				newSize = GetPageAlignedSize(neededSize);
 				_pageBlob.Resize(newSize, AccessCondition.GenerateIfMatchCondition(_pageBlob.Properties.ETag));
+				Logger.Verbose("Resized page blob [{0}], etag [{1}]", _pageBlob.Uri, _pageBlob.Properties.ETag);
 			}
 			catch (Microsoft.WindowsAzure.Storage.StorageException ex)
 			{ throw HandleAndRemapCommonExceptions(ex); }
@@ -227,7 +238,7 @@ namespace NEventStore.Persistence.AzureBlob
 		private static Exception HandleAndRemapCommonExceptions(Microsoft.WindowsAzure.Storage.StorageException ex)
 		{
 			if (ex.Message.Contains("412"))
-			{ return new ConcurrencyException("concurrency exception in markcommitasdispachted", ex); }
+			{ return new ConcurrencyException("concurrency detected.  see inner exception for details", ex); }
 			else
 			{ return ex; }
 		}

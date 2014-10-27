@@ -23,7 +23,7 @@ namespace AlphaTester
 			}
 
 			var eventsPerAggregate = 20;
-			var aggregatesToMake = 5;
+			var aggregatesToMake = 1;
 			if (args.Length > 1)
 			{ aggregatesToMake = Convert.ToInt32(args[1]); }
 
@@ -50,8 +50,8 @@ namespace AlphaTester
 				_log.Trace("Create aggy in [{0}]", creationTimer.Elapsed);
 
 				Random random = new Random();
-				for (int j = 0; j != eventsPerAggregate; ++j)
-				//Parallel.For(0, eventNum, options, (j) =>
+				//for (int j = 0; j != eventsPerAggregate; ++j)
+				Parallel.For(0, eventsPerAggregate, options, (j) =>
 				{
 					values.Add(j);
 					try
@@ -59,7 +59,7 @@ namespace AlphaTester
 					catch (Exception ex)
 					{ _log.Error("error iteration {0}-{1}, {2}", i, j, ex.ToString()); }
 
-				}//);
+				});
 
 				history.Add(new Tuple<Guid, ConcurrentBag<int>>(aggregateId, values));
 				_log.Trace(string.Format("Iteration [{0}] took me [{1}] ms", i, sw.ElapsedMilliseconds));
@@ -98,6 +98,12 @@ namespace AlphaTester
 				catch (ConcurrencyException)
 				{
 					_log.Trace("Concurrency Detected, will retry shortly");
+					var rand = new Random();
+					Thread.Sleep(rand.Next(0, 200));	// this is to increase race condition likelyhood
+				}
+				catch (Exception)
+				{
+					_log.Trace("Generic Exception");
 					var rand = new Random();
 					Thread.Sleep(rand.Next(0, 200));	// this is to increase race condition likelyhood
 				}

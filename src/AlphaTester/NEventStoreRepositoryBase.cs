@@ -41,13 +41,13 @@ namespace AlphaTester
 		/// desired, this will create the persistence layer.
 		/// </summary>
 		/// <returns></returns>
-		protected virtual void LazyInit( ref IStoreEvents storeEventsInstance, object lockObject )
+		protected virtual void LazyInit(ref IStoreEvents storeEventsInstance, object lockObject)
 		{
-			if ( storeEventsInstance == null )
+			if (storeEventsInstance == null)
 			{
-				lock ( lockObject )
+				lock (lockObject)
 				{
-					if ( storeEventsInstance == null )
+					if (storeEventsInstance == null)
 					{
 						NEventStore.Logging.LogFactory.BuildLogger = (x) => new NLogLogger(x);
 						var wireup = Wireup.Init();
@@ -61,48 +61,33 @@ namespace AlphaTester
 
 						storeEventsInstance = wireup
 							.UsingSynchronousDispatchScheduler()
-								.DispatchTo( new DelegateMessageDispatcher( DispatchCommit ) )
+								.DispatchTo(new DelegateMessageDispatcher(DispatchCommit))
 							.Build();
 					}
 				}
 			}
 		}
 
-		private void DispatchCommit( ICommit commit )
-		{
-			Console.WriteLine("Dispatched!!!");
-
-			// This is where we'd hook into our messaging infrastructure, such as NServiceBus,
-			// MassTransit, WCF, or some other communications infrastructure.
-			// This can be a class as well--just implement IDispatchCommits.
-			//try
-			//{
-			//	foreach ( var @event in commit.Events )
-			//		Console.WriteLine( "Dispatched Message" + ( (NewSimpleCreatedEvent)@event.Body ).Foo );
-			//}
-			//catch ( Exception )
-			//{
-			//	Console.WriteLine( "Unable to dispatch" );
-			//}
-		}
+		private void DispatchCommit(ICommit commit)
+		{ }
 
 		/// <summary>
 		/// Wireup of the sql server repository
 		/// </summary>
 		/// <param name="wireup"></param>
 		/// <returns></returns>
-		private Wireup WireupAzureBlobRepository( Wireup wireup )
+		private Wireup WireupAzureBlobRepository(Wireup wireup)
 		{
 
 			//var connectionString = "DefaultEndpointsProtocol=https;AccountName=bobafett;AccountKey=nOaTY+Pds2LQGm/2mW5nhi5WP4cYmip6Rg1RYHgZRhN3IbzDAfRugMafA0cqjQ49cVtd309F8+Dz9hGMH6iCuQ==";
 			var connectionString = "DefaultEndpointsProtocol=https;AccountName=devtesting22;AccountKey=rbjoU5Au59V3JtHjs77hZWizhmUsadetfFTGi1L212itId3GS4Igdgq1P3Wdcr+Ojvwp06UiSheQSxdQiAlmQw==";       // evans
-			var blobOptions = new AzureBlobPersistenceOptions( "alphatester", forceUniqueCheckpoint: false );
+			var blobOptions = new AzureBlobPersistenceOptions("alphatester", forceUniqueCheckpoint: false);
 			var eventStore = new byte[] { 80, 94, 86, 128, 97, 74, 65, 94, 91, 126, 62, 52, 129, 114, 86, 107 };
 			return wireup
-				.UsingAzureBlobPersistence( connectionString, blobOptions )
+				.UsingAzureBlobPersistence(connectionString, blobOptions)
 				.InitializeStorageEngine()
 				.UsingBinarySerialization()
-				.EncryptWith( eventStore );
+				.EncryptWith(eventStore);
 		}
 
 		/// <summary>
@@ -110,34 +95,34 @@ namespace AlphaTester
 		/// </summary>
 		/// <param name="wireup"></param>
 		/// <returns></returns>
-		private Wireup WireupSqlServerRepository( Wireup wireup )
+		private Wireup WireupSqlServerRepository(Wireup wireup)
 		{
 
 			// we need to make sure the database exists and also pull the db name out of the connection string
-			var connectionString = new ConfigurationConnectionFactory( "EventStore_SqlServer" ).Settings.ConnectionString;
+			var connectionString = new ConfigurationConnectionFactory("EventStore_SqlServer").Settings.ConnectionString;
 			var databaseNameRegex = @"(Initial Catalog=.*$)|(Initial Catalog=.*[;])";
-			var connectionStringModified = Regex.Replace( connectionString, databaseNameRegex, "Initial Catalog=master" );
-			var databaseName = Regex.Match( connectionString, databaseNameRegex ).Captures[0].Value.Replace( "Initial Catalog=", string.Empty );
+			var connectionStringModified = Regex.Replace(connectionString, databaseNameRegex, "Initial Catalog=master");
+			var databaseName = Regex.Match(connectionString, databaseNameRegex).Captures[0].Value.Replace("Initial Catalog=", string.Empty);
 
 			bool exists = false;
-			using ( var sqlConnection = new SqlConnection( connectionStringModified ) )
+			using (var sqlConnection = new SqlConnection(connectionStringModified))
 			{
-				var sqlCreateDBQuery = string.Format( "SELECT database_id FROM sys.databases WHERE Name = '{0}'", databaseName );
-				using ( var sqlCmd = new SqlCommand( sqlCreateDBQuery, sqlConnection ) )
+				var sqlCreateDBQuery = string.Format("SELECT database_id FROM sys.databases WHERE Name = '{0}'", databaseName);
+				using (var sqlCmd = new SqlCommand(sqlCreateDBQuery, sqlConnection))
 				{
 					sqlConnection.Open();
 					var dbId = sqlCmd.ExecuteScalar();
-					exists = ( dbId != null ) && ( Convert.ToInt32( dbId ) > 0 );
+					exists = (dbId != null) && (Convert.ToInt32(dbId) > 0);
 					sqlConnection.Close();
 				}
 			}
 
-			if ( !exists )
+			if (!exists)
 			{
-				using ( var sqlConnection = new SqlConnection( connectionStringModified ) )
+				using (var sqlConnection = new SqlConnection(connectionStringModified))
 				{
-					var sqlCreateDBQuery = string.Format( "CREATE DATABASE {0}", databaseName );
-					using ( var sqlCmd = new SqlCommand( sqlCreateDBQuery, sqlConnection ) )
+					var sqlCreateDBQuery = string.Format("CREATE DATABASE {0}", databaseName);
+					using (var sqlCmd = new SqlCommand(sqlCreateDBQuery, sqlConnection))
 					{
 						sqlConnection.Open();
 						sqlCmd.ExecuteScalar();
@@ -147,8 +132,8 @@ namespace AlphaTester
 			}
 
 			return wireup
-				.UsingSqlPersistence( "EventStore_SqlServer" )
-				.WithDialect( new MsSqlDialect() )
+				.UsingSqlPersistence("EventStore_SqlServer")
+				.WithDialect(new MsSqlDialect())
 				.InitializeStorageEngine()
 				.UsingBsonSerialization();
 		}

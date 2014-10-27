@@ -22,16 +22,15 @@ namespace AlphaTester
 				{ repoType = eRepositoryType.Sql; }
 			}
 
-			var eventsPerAggregate = 20;
-			var aggregatesToMake = 10;
+			var eventsPerAggregate = 100;
+			var aggregatesToMake = 50;
 			if (args.Length > 1)
 			{ aggregatesToMake = Convert.ToInt32(args[1]); }
 
 			var history = new ConcurrentBag<Tuple<Guid, ConcurrentBag<int>>>();
 
 			var startTime = DateTime.UtcNow;
-			var options = new ParallelOptions();
-			options.MaxDegreeOfParallelism = 10;
+			var options = new ParallelOptions() { MaxDegreeOfParallelism = Math.Min(15, aggregatesToMake / 5 + 5) };
 			Parallel.For(0, aggregatesToMake, options, (i) =>
 			{
 				var aggregateId = Guid.NewGuid();
@@ -50,7 +49,7 @@ namespace AlphaTester
 				_log.Trace("Create aggy in [{0}]", creationTimer.Elapsed);
 
 				Random random = new Random();
-				//for (int j = 0; j != eventsPerAggregate; ++j)
+				var commitOptions = new ParallelOptions() { MaxDegreeOfParallelism = 10 };
 				Parallel.For(0, eventsPerAggregate, options, (j) =>
 				{
 					values.Add(j);
@@ -66,13 +65,13 @@ namespace AlphaTester
 			});
 
 			var totalTime = DateTime.UtcNow.Subtract(startTime);
-			_log.Info("Checkking aggregates for errors");
-			foreach (var historyItem in history)
+			_log.Info("checking aggregates for errors");
+			Parallel.ForEach(history, (historyItem) =>
 			{
 				var repository = new TestRepository(repoType);
 				CheckAggregate(repository, historyItem.Item1, historyItem.Item2);
-			}
-			_log.Info("Took [{0}]", totalTime);
+			});
+			_log.Info("Took [{0}] to source all aggregates", totalTime);
 		}
 
 		private static void RetryWhileConcurrent(eRepositoryType repoType, Guid aggyId, int value)

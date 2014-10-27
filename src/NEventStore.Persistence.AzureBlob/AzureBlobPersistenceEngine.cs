@@ -29,13 +29,18 @@ namespace NEventStore.Persistence.AzureBlob
 		private const string _checkpointNumberKey = "checkpointnumber";
 		private const string _hasUndispatchedCommitsKey = "hasUndispatchedCommits";
 		private const string _isEventStreamAggregateKey = "isEventStreamAggregate";
-		private const string _headerDefinitionKey = "headerDefinition";
+
+		// because of the two phase commit nature of this system, we always work with two header definitions.  the primary
+		// is the header definition that is what we hope will be correct.  The fallback is there for the case where we write the
+		// definition, but fail to write the header correctly.
+		private const string _primaryHeaderDefinitionKey = "primaryHeaderDefinition";
+		private const string _fallbackHeaderDefinitionKey = "fallbackHeaderDefinition";
 
 		private const int _blobPageSize = 512;
 		private readonly ISerialize _serializer;
 		private readonly AzureBlobPersistenceOptions _options;
 		private readonly CloudBlobClient _blobClient;
-		private readonly CloudBlobContainer _blobContainer;
+		private readonly CloudBlobContainer _primaryContainer;
 		private readonly string _connectionString;
 		private int _initialized;
 		private bool _disposed;
@@ -61,7 +66,7 @@ namespace NEventStore.Persistence.AzureBlob
 			_connectionString = connectionString;
 			var storageAccount = CloudStorageAccount.Parse(connectionString);
 			_blobClient = storageAccount.CreateCloudBlobClient();
-			_blobContainer = _blobClient.GetContainerReference(GetContainerName());
+			_primaryContainer = _blobClient.GetContainerReference(GetContainerName());
 		}
 
 		/// <summary>
@@ -82,7 +87,7 @@ namespace NEventStore.Persistence.AzureBlob
 			// application developer.
 			if (Interlocked.Increment(ref _connectionLimitSet) < 2)
 			{
-				Uri uri = new Uri(GetPrimaryContainer().Uri.AbsoluteUri);
+				Uri uri = new Uri(_primaryContainer.Uri.AbsoluteUri);
 				var sp = ServicePointManager.FindServicePoint(uri);
 				sp.ConnectionLimit = _options.ParallelConnectionLimit;
 
@@ -102,7 +107,7 @@ namespace NEventStore.Persistence.AzureBlob
 			}
 
 			if (Interlocked.Increment(ref _initialized) < 2)
-			{ GetPrimaryContainer().CreateIfNotExists(); }
+			{ _primaryContainer.CreateIfNotExists(); }
 		}
 
 		/// <summary>
@@ -163,7 +168,7 @@ namespace NEventStore.Persistence.AzureBlob
 		/// <returns>The list of commits from the given blobEntry and greater than or equal to the start date and less than or equal to the end date.</returns>
 		public IEnumerable<ICommit> GetFromTo(string bucketId, DateTime start, DateTime end)
 		{
-			var pageBlobs = WrappedPageBlob.GetAllMatchinPrefix(GetPrimaryContainer(), GetContainerName() + "/" + bucketId);
+			var pageBlobs = WrappedPageBlob.GetAllMatchinPrefix(_primaryContainer, GetContainerName() + "/" + bucketId);
 
 			// this could be a tremendous amount of data.  Depending on system used
 			// this may not be performant enough and may require some sort of index be built.
@@ -194,43 +199,7 @@ namespace NEventStore.Persistence.AzureBlob
 		/// <returns></returns>
 		public IEnumerable<ICommit> GetFrom(string bucketId, string streamId, int minRevision, int maxRevision)
 		{
-			int attempts = 0;
-			while (true)
-			{
-				try
-				{ return GetFromInternal(bucketId, streamId, minRevision, maxRevision); }
-				catch (Microsoft.WindowsAzure.Storage.StorageException ex)
-				{
-					if (ex.Message.Contains("416"))
-					{
-						if (attempts++ > 5)
-						{
-							Logger.Error("Azure is giving us a consistent bounds issue with bucket id: {0}, stream id: {1}.  This may need to be looked into and may indicate corruption with the stream.", bucketId, streamId);
-							throw new ConcurrencyException("Issue with azure concurrency.  operation should be tried again", ex);
-						}
-						else
-						{
-							Logger.Info("Azure notified us of out of bounds issue.  Occurs occasionally when operating very quickly on single stream.  Storage engine will retry automatically");
-							Thread.Sleep(10);
-						}
-					}
-					else
-					{ throw; }
-				}
-			}
-		}
-
-		/// <summary>
-		/// Internal get from call
-		/// </summary>
-		/// <param name="bucketId"></param>
-		/// <param name="streamId"></param>
-		/// <param name="minRevision"></param>
-		/// <param name="maxRevision"></param>
-		/// <returns></returns>
-		private IEnumerable<ICommit> GetFromInternal(string bucketId, string streamId, int minRevision, int maxRevision)
-		{
-			var pageBlob = WrappedPageBlob.CreateNewIfNotExists(GetPrimaryContainer(), bucketId + "/" + streamId);
+			var pageBlob = WrappedPageBlob.CreateNewIfNotExists(_primaryContainer, bucketId + "/" + streamId);
 
 			var header = GetHeader(pageBlob, null);
 
@@ -271,7 +240,6 @@ namespace NEventStore.Persistence.AzureBlob
 			}
 
 			return commits;
-
 		}
 
 		/// <summary>
@@ -363,7 +331,7 @@ namespace NEventStore.Persistence.AzureBlob
 		/// <param name="commit">The commit object to mark as dispatched.</param>
 		public void MarkCommitAsDispatched(ICommit commit)
 		{
-			var pageBlob = WrappedPageBlob.GetAssumingExists(GetPrimaryContainer(), commit.BucketId + "/" + commit.StreamId);
+			var pageBlob = WrappedPageBlob.GetAssumingExists(_primaryContainer, commit.BucketId + "/" + commit.StreamId);
 			var headerDefinitionMetadata = GetHeaderDefinitionMetadata(pageBlob);
 			var header = GetHeader(pageBlob, headerDefinitionMetadata);
 
@@ -384,7 +352,7 @@ namespace NEventStore.Persistence.AzureBlob
 		/// Purge a container.
 		/// </summary>
 		public void Purge()
-		{ GetPrimaryContainer().Delete(); }
+		{ _primaryContainer.Delete(); }
 
 		/// <summary>
 		/// Purge a series of streams
@@ -392,7 +360,7 @@ namespace NEventStore.Persistence.AzureBlob
 		/// <param name="bucketId"></param>
 		public void Purge(string bucketId)
 		{
-			var blobs = GetPrimaryContainer().ListBlobs(GetContainerName() + "/" + bucketId, true, BlobListingDetails.Metadata).OfType<CloudPageBlob>();
+			var blobs = _primaryContainer.ListBlobs(GetContainerName() + "/" + bucketId, true, BlobListingDetails.Metadata).OfType<CloudPageBlob>();
 			foreach (var blob in blobs)
 			{ blob.Delete(); }
 		}
@@ -401,7 +369,7 @@ namespace NEventStore.Persistence.AzureBlob
 		/// Drop a container.
 		/// </summary>
 		public void Drop()
-		{ GetPrimaryContainer().Delete(); }
+		{ _primaryContainer.Delete(); }
 
 		/// <summary>
 		/// Deletes a stream by blobEntry and stream id.
@@ -410,7 +378,7 @@ namespace NEventStore.Persistence.AzureBlob
 		/// <param name="streamId">The stream id.</param>
 		public void DeleteStream(string bucketId, string streamId)
 		{
-			var pageBlobReference = GetPrimaryContainer().GetPageBlobReference(bucketId + "/" + streamId);
+			var pageBlobReference = _primaryContainer.GetPageBlobReference(bucketId + "/" + streamId);
 			string leaseId = pageBlobReference.AcquireLease(new TimeSpan(0, 0, 60), null);
 			pageBlobReference.Delete(accessCondition: AccessCondition.GenerateLeaseCondition(leaseId));
 			pageBlobReference.ReleaseLease(AccessCondition.GenerateLeaseCondition(leaseId));
@@ -441,7 +409,7 @@ namespace NEventStore.Persistence.AzureBlob
 		/// <returns>An Commit if successful.</returns>
 		public ICommit Commit(CommitAttempt attempt)
 		{
-			var pageBlob = WrappedPageBlob.CreateNewIfNotExists(GetPrimaryContainer(), attempt.BucketId + "/" + attempt.StreamId);
+			var pageBlob = WrappedPageBlob.CreateNewIfNotExists(_primaryContainer, attempt.BucketId + "/" + attempt.StreamId);
 			var header = GetHeader(pageBlob, null);
 
 			// we must commit at a page offset, we will just track how many pages in we must start writing at
@@ -556,11 +524,13 @@ namespace NEventStore.Persistence.AzureBlob
 		/// </summary>
 		/// <param name="blob"></param>
 		/// <returns></returns>
-		private HeaderDefinitionMetadata GetHeaderDefinitionMetadata(WrappedPageBlob blob)
+		private HeaderDefinitionMetadata GetHeaderDefinitionMetadata(WrappedPageBlob blob, bool useFallback = false)
 		{
+			var keyToUse = useFallback ? _fallbackHeaderDefinitionKey : _primaryHeaderDefinitionKey;
+
 			HeaderDefinitionMetadata headerDefinition;
 			string serializedHeaderDefinition;
-			if (blob.Metadata.TryGetValue(_headerDefinitionKey, out serializedHeaderDefinition))
+			if (blob.Metadata.TryGetValue(keyToUse, out serializedHeaderDefinition))
 			{ headerDefinition = HeaderDefinitionMetadata.FromRaw(Convert.FromBase64String(serializedHeaderDefinition)); }
 			else
 			{ headerDefinition = new HeaderDefinitionMetadata(); }
@@ -575,14 +545,28 @@ namespace NEventStore.Persistence.AzureBlob
 		/// <returns>A populated StreamBlobHeader.</returns>
 		private StreamBlobHeader GetHeader(WrappedPageBlob blob, HeaderDefinitionMetadata prefetched)
 		{
-			var headerDefinitionMetadata = prefetched ?? GetHeaderDefinitionMetadata(blob);
-			if (headerDefinitionMetadata.HeaderSizeInBytes != 0)
+			prefetched = prefetched ?? GetHeaderDefinitionMetadata(blob);
+			if (prefetched.HeaderSizeInBytes != 0)
 			{
-				var downloadedData = blob.DownloadBytes(headerDefinitionMetadata.HeaderStartLocationOffsetBytes,
-					headerDefinitionMetadata.HeaderStartLocationOffsetBytes + headerDefinitionMetadata.HeaderSizeInBytes);
+				var downloadedData = blob.DownloadBytes(prefetched.HeaderStartLocationOffsetBytes,
+					prefetched.HeaderStartLocationOffsetBytes + prefetched.HeaderSizeInBytes);
 
-				using (var ms = new MemoryStream(downloadedData, false))
-				{ return _serializer.Deserialize<StreamBlobHeader>(ms.ToArray()); }
+				try
+				{
+					using (var ms = new MemoryStream(downloadedData, false))
+					{ return _serializer.Deserialize<StreamBlobHeader>(ms.ToArray()); }
+				}
+				catch (Exception)
+				{
+					Logger.Info("Having to use fallback definition.  This is caused by a race condition, and will happen with \"Hot\" streams");
+
+					prefetched = GetHeaderDefinitionMetadata(blob, true);
+
+					downloadedData = blob.DownloadBytes(prefetched.HeaderStartLocationOffsetBytes,
+						prefetched.HeaderStartLocationOffsetBytes + prefetched.HeaderSizeInBytes);
+					using (var ms = new MemoryStream(downloadedData, false))
+					{ return _serializer.Deserialize<StreamBlobHeader>(ms.ToArray()); }
+				}
 			}
 			else
 			{ return new StreamBlobHeader(); }
@@ -625,6 +609,18 @@ namespace NEventStore.Persistence.AzureBlob
 
 			Logger.Verbose("Header is [{0}] bytes", serializedHeader.Length);
 
+			// set the header definition to make it all official
+			var headerDefinitionMetadata = new HeaderDefinitionMetadata();
+			headerDefinitionMetadata.HasUndispatchedCommits = header.PageBlobCommitDefinitions.Any((x) => !x.IsDispatched);
+			headerDefinitionMetadata.HeaderSizeInBytes = serializedHeader.Length;
+			headerDefinitionMetadata.HeaderStartLocationOffsetBytes = writeStartLocationAligned + newCommit.Length;
+			blob.Metadata[_isEventStreamAggregateKey] = "yes";
+			blob.Metadata[_hasUndispatchedCommitsKey] = header.PageBlobCommitDefinitions.Any((x) => !x.IsDispatched).ToString();
+			if (blob.Metadata.ContainsKey(_primaryHeaderDefinitionKey))
+			{ blob.Metadata[_fallbackHeaderDefinitionKey] = blob.Metadata[_primaryHeaderDefinitionKey]; }
+			blob.Metadata[_primaryHeaderDefinitionKey] = Convert.ToBase64String(headerDefinitionMetadata.GetRaw());
+			blob.SetMetadata();
+
 			using (var ms = new MemoryStream(amountToWriteAligned))
 			{
 				ms.Write(newCommit, 0, newCommit.Length);
@@ -642,16 +638,6 @@ namespace NEventStore.Persistence.AzureBlob
 				ms.Position = 0;
 				blob.Write(ms, writeStartLocationAligned);
 			}
-
-			// set the header definition to make it all official
-			var headerDefinitionMetadata = new HeaderDefinitionMetadata();
-			headerDefinitionMetadata.HasUndispatchedCommits = header.PageBlobCommitDefinitions.Any((x) => !x.IsDispatched);
-			headerDefinitionMetadata.HeaderSizeInBytes = serializedHeader.Length;
-			headerDefinitionMetadata.HeaderStartLocationOffsetBytes = writeStartLocationAligned + newCommit.Length;
-			blob.Metadata[_isEventStreamAggregateKey] = "yes";
-			blob.Metadata[_hasUndispatchedCommitsKey] = header.PageBlobCommitDefinitions.Any((x) => !x.IsDispatched).ToString();
-			blob.Metadata[_headerDefinitionKey] = Convert.ToBase64String(headerDefinitionMetadata.GetRaw());
-			blob.SetMetadata();
 		}
 
 		/// <summary>
@@ -701,14 +687,6 @@ namespace NEventStore.Persistence.AzureBlob
 			}
 
 			return nextCheckpoint;
-		}
-
-		private CloudBlobContainer GetPrimaryContainer()
-		{
-			return _blobContainer;
-			//var storageAccount = CloudStorageAccount.Parse(_connectionString);
-			//var newBlobClient = storageAccount.CreateCloudBlobClient();
-			//return newBlobClient.GetContainerReference(GetContainerName());
 		}
 
 		#endregion

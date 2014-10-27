@@ -23,7 +23,7 @@ namespace AlphaTester
 			}
 
 			var eventsPerAggregate = 20;
-			var aggregatesToMake = 1;
+			var aggregatesToMake = 10;
 			if (args.Length > 1)
 			{ aggregatesToMake = Convert.ToInt32(args[1]); }
 
@@ -101,9 +101,9 @@ namespace AlphaTester
 					var rand = new Random();
 					Thread.Sleep(rand.Next(0, 200));	// this is to increase race condition likelyhood
 				}
-				catch (Exception)
+				catch (Exception ex)
 				{
-					_log.Trace("Generic Exception");
+					_log.Trace("BAD!!!!!! Generic Exception, [{0}], we will let the aggregate retry though", ex.Message);
 					var rand = new Random();
 					Thread.Sleep(rand.Next(0, 200));	// this is to increase race condition likelyhood
 				}

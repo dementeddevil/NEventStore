@@ -22,8 +22,8 @@ namespace AlphaTester
 				{ repoType = eRepositoryType.Sql; }
 			}
 
-			var eventsPerAggregate = 100;
-			var aggregatesToMake = 50;
+			var eventsPerAggregate = 2;
+			var aggregatesToMake = 2000;
 			if (args.Length > 1)
 			{ aggregatesToMake = Convert.ToInt32(args[1]); }
 

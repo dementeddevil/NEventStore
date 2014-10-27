@@ -4,7 +4,6 @@ using System.IO;
 using System.Linq;
 using Microsoft.WindowsAzure.Storage;
 using Microsoft.WindowsAzure.Storage.Blob;
-using Microsoft.WindowsAzure.Storage.RetryPolicies;
 using NEventStore.Logging;
 using AzureStorage = Microsoft.WindowsAzure.Storage;
 
@@ -155,8 +154,6 @@ namespace NEventStore.Persistence.AzureBlob
 			{ _pageBlob.SetMetadata(AccessCondition.GenerateIfMatchCondition(_pageBlob.Properties.ETag)); }
 			catch (AzureStorage.StorageException ex)
 			{ throw HandleAndRemapCommonExceptions(ex); }
-
-			Logger.Verbose("Set metadata for blob [{0}], etag [{1}]", _pageBlob.Uri, _pageBlob.Properties.ETag);
 		}
 
 		/// <summary>
@@ -174,7 +171,6 @@ namespace NEventStore.Persistence.AzureBlob
 				Logger.Verbose("Downloading [{0}] bytes for blob [{1}], etag [{2}]", data.Length, _pageBlob.Uri, _pageBlob.Properties.ETag);
 				var bytesDownloaded = _pageBlob.DownloadRangeToByteArray(data, 0, startIndex, data.Length,
 					AccessCondition.GenerateIfMatchCondition(_pageBlob.Properties.ETag));
-				Logger.Verbose("Downloaded [{0}] bytes for blob [{1}], etag [{2}]", data.Length, _pageBlob.Uri, _pageBlob.Properties.ETag);
 				return data;
 			}
 			catch (AzureStorage.StorageException ex)
@@ -206,14 +202,14 @@ namespace NEventStore.Persistence.AzureBlob
 		/// <param name="neededSize"></param>
 		public void Resize(int neededSize)
 		{
+			Logger.Verbose("Resizing page blob [{0}], etag [{1}]", _pageBlob.Uri, _pageBlob.Properties.ETag);
+
 			try
 			{
-				Logger.Verbose("Resizing page blob [{0}], etag [{1}]", _pageBlob.Uri, _pageBlob.Properties.ETag);
 				// we are going to grow by 50%
 				var newSize = (int)Math.Floor(neededSize * 1.5);
 				newSize = GetPageAlignedSize(neededSize);
 				_pageBlob.Resize(newSize, AccessCondition.GenerateIfMatchCondition(_pageBlob.Properties.ETag));
-				Logger.Verbose("Resized page blob [{0}], etag [{1}]", _pageBlob.Uri, _pageBlob.Properties.ETag);
 			}
 			catch (Microsoft.WindowsAzure.Storage.StorageException ex)
 			{ throw HandleAndRemapCommonExceptions(ex); }

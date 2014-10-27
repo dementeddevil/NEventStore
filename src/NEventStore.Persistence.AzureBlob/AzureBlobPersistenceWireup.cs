@@ -1,6 +1,6 @@
-﻿using NEventStore.Logging;
+﻿using System.Transactions;
+using NEventStore.Logging;
 using NEventStore.Serialization;
-using System.Transactions;
 
 namespace NEventStore.Persistence.AzureBlob
 {

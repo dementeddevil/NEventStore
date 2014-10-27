@@ -37,12 +37,13 @@ namespace NEventStore.Persistence.AzureBlob
 		/// </summary>
 		/// <param name="blobContainer">the container that owns the blob</param>
 		/// <param name="blobId">the id of the blob</param>
+		/// <param name="startingPages">default number of pages to start with</param>
 		/// <returns>the already existing or newly created page blob</returns>
 		/// <remarks>This call should only be used when uncertain if the blob already exists.  It costs an extra API call</remarks>
-		public static WrappedPageBlob CreateNewIfNotExists(CloudBlobContainer blobContainer, string blobId)
+		public static WrappedPageBlob CreateNewIfNotExists(CloudBlobContainer blobContainer, string blobId, int startingPages)
 		{
 			var pageBlob = GetAssumingExists(blobContainer, blobId);
-			return pageBlob ?? CreateNew(blobContainer, blobId);
+			return pageBlob ?? CreateNew(blobContainer, blobId, startingPages);
 		}
 
 		/// <summary>
@@ -67,6 +68,7 @@ namespace NEventStore.Persistence.AzureBlob
 		/// </summary>
 		/// <param name="blobContainer">the container that owns the blob</param>
 		/// <param name="blobId">the id of the blob</param>
+		/// 		/// <param name="startingPages">default number of pages to start with</param>
 		/// <returns></returns>
 		public static WrappedPageBlob GetAssumingExists(CloudBlobContainer blobContainer, string blobId)
 		{
@@ -84,11 +86,11 @@ namespace NEventStore.Persistence.AzureBlob
 		/// <param name="blobContainer">the container that owns the blob</param>
 		/// <param name="blobId">the id of the blob</param>
 		/// <returns></returns>
-		public static WrappedPageBlob CreateNew(CloudBlobContainer blobContainer, string blobId)
+		public static WrappedPageBlob CreateNew(CloudBlobContainer blobContainer, string blobId, int startingPages)
 		{
 			Logger.Verbose("Creating new blob with id [{0}]", blobId);
 			var pageBlob = blobContainer.GetPageBlobReference(blobId);
-			pageBlob.Create((long)512*2000);
+			pageBlob.Create((long)512*startingPages);
 			pageBlob.FetchAttributes();
 			return new WrappedPageBlob(pageBlob);
 		}
@@ -131,10 +133,12 @@ namespace NEventStore.Persistence.AzureBlob
 		/// than fetched when the wrapped page was first created
 		/// </summary>
 		/// <param name="accessCondition">the access condition</param>
-		public void RefetchAttributes(AccessCondition accessCondition = null)
+		public void RefetchAttributes(bool disregardConcurrency)
 		{
 			try
 			{
+				var accessCondition = disregardConcurrency ? null : AccessCondition.GenerateIfMatchCondition(_pageBlob.Properties.ETag);
+
 				Logger.Verbose("Fetching attributes for blob [{0}]", _pageBlob.Uri);
 				_pageBlob.FetchAttributes(accessCondition);
 			}
@@ -163,14 +167,16 @@ namespace NEventStore.Persistence.AzureBlob
 		/// <param name="endPage">end page</param>
 		/// <param name="accessCondition">access conditions</param>
 		/// <returns></returns>
-		public byte[] DownloadBytes(int startIndex, int endIndex)
+		public byte[] DownloadBytes(int startIndex, int endIndex, bool disregardConcurrency = false)
 		{
 			try
 			{
+				var accessCondition = disregardConcurrency ? null : AccessCondition.GenerateIfMatchCondition(_pageBlob.Properties.ETag);
+
 				var data = new byte[endIndex - startIndex];
 				Logger.Verbose("Downloading [{0}] bytes for blob [{1}], etag [{2}]", data.Length, _pageBlob.Uri, _pageBlob.Properties.ETag);
 				var bytesDownloaded = _pageBlob.DownloadRangeToByteArray(data, 0, startIndex, data.Length,
-					AccessCondition.GenerateIfMatchCondition(_pageBlob.Properties.ETag));
+					accessCondition);
 				return data;
 			}
 			catch (AzureStorage.StorageException ex)

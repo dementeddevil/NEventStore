@@ -144,7 +144,7 @@ namespace NEventStore.Persistence.AzureBlob
 				// this may not be performant enough and may require some sort of index be built.
 				foreach (var pageBlob in blobs)
 				{
-					var header = GetHeader(pageBlob, null);
+					var header = GetHeaderWithRetry(pageBlob, null);
 					foreach (var definition in header.PageBlobCommitDefinitions)
 					{ allCommitDefinitions.Add(new Tuple<WrappedPageBlob, PageBlobCommitDefinition>(pageBlob, definition)); }
 				}
@@ -173,7 +173,7 @@ namespace NEventStore.Persistence.AzureBlob
 			var allCommitDefinitions = new List<Tuple<WrappedPageBlob, PageBlobCommitDefinition>>();
 			foreach (var pageBlob in pageBlobs)
 			{
-				var header = GetHeader(pageBlob, null);
+				var header = GetHeaderWithRetry(pageBlob, null);
 				foreach (var definition in header.PageBlobCommitDefinitions)
 				{
 					if (definition.CommitStampUtc >= start && definition.CommitStampUtc <= end)
@@ -197,9 +197,8 @@ namespace NEventStore.Persistence.AzureBlob
 		/// <returns></returns>
 		public IEnumerable<ICommit> GetFrom(string bucketId, string streamId, int minRevision, int maxRevision)
 		{
-			var pageBlob = WrappedPageBlob.CreateNewIfNotExists(_primaryContainer, bucketId + "/" + streamId);
-
-			var header = GetHeader(pageBlob, null);
+			var pageBlob = WrappedPageBlob.CreateNewIfNotExists(_primaryContainer, bucketId + "/" + streamId, _options.BlobNumPages);
+			var header = GetHeaderWithRetry(pageBlob, null);
 
 			// find out how many pages we are reading
 			int startPage = 0;
@@ -226,9 +225,9 @@ namespace NEventStore.Persistence.AzureBlob
 
 			// process the downloaded data
 			var commits = new List<ICommit>();
-			for (int i = startIndex; i != startIndex + numberOfCommits; i++)
+			for (var i = startIndex; i != startIndex + numberOfCommits; i++)
 			{
-				var commitStartIndex = (header.PageBlobCommitDefinitions[(int)i].StartPage - startPage) * _blobPageSize;
+				var commitStartIndex = (header.PageBlobCommitDefinitions[i].StartPage - startPage) * _blobPageSize;
 				var commitSize = header.PageBlobCommitDefinitions[i].DataSizeBytes;
 				using (var ms = new MemoryStream(downloadedData, commitStartIndex, commitSize, false))
 				{
@@ -289,7 +288,7 @@ namespace NEventStore.Persistence.AzureBlob
 							{
 								try
 								{
-									var header = GetHeader(pageBlob, null);
+									var header = GetHeaderWithRetry(pageBlob, null);
 									if (header.UndispatchedCommitCount > 0)
 									{
 										foreach (var definition in header.PageBlobCommitDefinitions)
@@ -331,7 +330,7 @@ namespace NEventStore.Persistence.AzureBlob
 		{
 			var pageBlob = WrappedPageBlob.GetAssumingExists(_primaryContainer, commit.BucketId + "/" + commit.StreamId);
 			var headerDefinitionMetadata = GetHeaderDefinitionMetadata(pageBlob);
-			var header = GetHeader(pageBlob, headerDefinitionMetadata);
+			var header = GetHeaderWithRetry(pageBlob, headerDefinitionMetadata);
 
 			// we must commit at a page offset, we will just track how many pages in we must start writing at
 			foreach (var commitDefinition in header.PageBlobCommitDefinitions)
@@ -407,8 +406,8 @@ namespace NEventStore.Persistence.AzureBlob
 		/// <returns>An Commit if successful.</returns>
 		public ICommit Commit(CommitAttempt attempt)
 		{
-			var pageBlob = WrappedPageBlob.CreateNewIfNotExists(_primaryContainer, attempt.BucketId + "/" + attempt.StreamId);
-			var header = GetHeader(pageBlob, null);
+			var pageBlob = WrappedPageBlob.CreateNewIfNotExists(_primaryContainer, attempt.BucketId + "/" + attempt.StreamId, _options.BlobNumPages);
+			var header = GetHeaderWithRetry(pageBlob, null);
 
 			// we must commit at a page offset, we will just track how many pages in we must start writing at
 			var startPage = 0;
@@ -482,7 +481,7 @@ namespace NEventStore.Persistence.AzureBlob
 		{
 			var startIndex = commitDefinition.StartPage * _blobPageSize;
 			var endIndex = startIndex + commitDefinition.DataSizeBytes;
-			var downloadedData = blob.DownloadBytes(startIndex, endIndex);
+			var downloadedData = blob.DownloadBytes(startIndex, endIndex, true);
 			using (var ms = new MemoryStream(downloadedData, false))
 			{
 				AzureBlobCommit azureBlobCommit;
@@ -541,33 +540,52 @@ namespace NEventStore.Persistence.AzureBlob
 		/// <param name="blob">The Blob.</param>
 		/// <param name="ignoreAccessCondition">true if the access condition check should be ignored... USE LIGHTLY</param>
 		/// <returns>A populated StreamBlobHeader.</returns>
-		private StreamBlobHeader GetHeader(WrappedPageBlob blob, HeaderDefinitionMetadata prefetched)
+		private StreamBlobHeader GetHeaderWithRetry(WrappedPageBlob blob, HeaderDefinitionMetadata prefetched)
 		{
 			prefetched = prefetched ?? GetHeaderDefinitionMetadata(blob);
-			if (prefetched.HeaderSizeInBytes != 0)
-			{
-				var downloadedData = blob.DownloadBytes(prefetched.HeaderStartLocationOffsetBytes,
-					prefetched.HeaderStartLocationOffsetBytes + prefetched.HeaderSizeInBytes);
-
-				try
-				{
-					using (var ms = new MemoryStream(downloadedData, false))
-					{ return _serializer.Deserialize<StreamBlobHeader>(ms.ToArray()); }
-				}
-				catch (Exception)
-				{
-					Logger.Info("Having to use fallback definition.  This is caused by a race condition, and will happen with \"Hot\" streams");
-
-					prefetched = GetHeaderDefinitionMetadata(blob, true);
-
-					downloadedData = blob.DownloadBytes(prefetched.HeaderStartLocationOffsetBytes,
-						prefetched.HeaderStartLocationOffsetBytes + prefetched.HeaderSizeInBytes);
-					using (var ms = new MemoryStream(downloadedData, false))
-					{ return _serializer.Deserialize<StreamBlobHeader>(ms.ToArray()); }
-				}
-			}
-			else
+			if (prefetched.HeaderSizeInBytes == 0)
 			{ return new StreamBlobHeader(); }
+
+			var lastException = new Exception(""); ;
+			var header = SafeGetHeader(blob, prefetched, out lastException);
+			if (header == null)
+			{
+				prefetched = GetHeaderDefinitionMetadata(blob, true);
+				header = SafeGetHeader(blob, prefetched, out lastException);
+			}
+
+			if (header != null)
+			{ return header; }
+
+			// this should trigger a concurrency
+			blob.RefetchAttributes(false);
+			throw lastException;
+		}
+
+		/// <summary>
+		/// Safely receive the header.
+		/// </summary>
+		/// <param name="blob">blob</param>
+		/// <param name="headerDefinition">header definition</param>
+		/// <param name="exception">exception that occured</param>
+		/// <returns>the header, otherwise null if it could not be fetched</returns>
+		private StreamBlobHeader SafeGetHeader(WrappedPageBlob blob, HeaderDefinitionMetadata headerDefinition, out Exception exception)
+		{
+			StreamBlobHeader header = null;
+			exception = null;
+
+			try
+			{
+				var downloadedData = blob.DownloadBytes(headerDefinition.HeaderStartLocationOffsetBytes,
+									headerDefinition.HeaderStartLocationOffsetBytes + headerDefinition.HeaderSizeInBytes);
+
+				using (var ms = new MemoryStream(downloadedData, false))
+				{ header = _serializer.Deserialize<StreamBlobHeader>(ms.ToArray()); }
+			}
+			catch (Exception ex)
+			{ exception = ex; }
+
+			return header;
 		}
 
 		/// <summary>
@@ -605,11 +623,8 @@ namespace NEventStore.Persistence.AzureBlob
 				totalBlobLength = blob.Properties.Length;
 			}
 
-			Logger.Verbose("Header is [{0}] bytes", serializedHeader.Length);
-
 			// set the header definition to make it all official
 			var headerDefinitionMetadata = new HeaderDefinitionMetadata();
-			headerDefinitionMetadata.HasUndispatchedCommits = header.PageBlobCommitDefinitions.Any((x) => !x.IsDispatched);
 			headerDefinitionMetadata.HeaderSizeInBytes = serializedHeader.Length;
 			headerDefinitionMetadata.HeaderStartLocationOffsetBytes = writeStartLocationAligned + newCommit.Length;
 			blob.Metadata[_isEventStreamAggregateKey] = "yes";
@@ -655,7 +670,7 @@ namespace NEventStore.Persistence.AzureBlob
 			var checkpointBlob = WrappedPageBlob.GetAssumingExists(blobContainer, _checkpointBlobName);
 
 			if (checkpointBlob == null)
-			{ checkpointBlob = WrappedPageBlob.CreateNew(blobContainer, _checkpointBlobName); }
+			{ checkpointBlob = WrappedPageBlob.CreateNew(blobContainer, _checkpointBlobName, 1); }
 
 			uint nextCheckpoint = 1;
 			while (true)
@@ -677,7 +692,7 @@ namespace NEventStore.Persistence.AzureBlob
 					if (_options.ForceUniqueCheckpoint)
 					{
 						Logger.Warn("Unique checkpoint fetch failed.  Trying again.  If this happens frequently it could have significant impacts on system performance.  It may warrent turning off forcing of unique checkpoints.");
-						checkpointBlob.RefetchAttributes();
+						checkpointBlob.RefetchAttributes(true);
 					}
 					else
 					{ break; }

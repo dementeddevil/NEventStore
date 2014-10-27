@@ -43,17 +43,25 @@ namespace NEventStore.Persistence.AzureBlob
 		{ get; set; }
 
 		/// <summary>
+		/// The number of pages a new blob will be created with.
+		/// </summary>
+		public int BlobNumPages
+		{ get; set; }
+
+		/// <summary>
 		/// Create a new AzureBlobPersistenceOptions
 		/// </summary>
 		/// <param name="containerName">name of the container within the azure storage account</param>
-		/// <param name="containerType">typeof container</param>
+		/// <param name="containerType">type of container</param>
 		/// <param name="parallelConnectionLimit">maximum parallel connection that can be made to the storage account at once</param>
+		/// <param name="blobNumPages">the number of pages a new blob will be created with</param>
 		/// <param name="forceUniqueCheckpoint">force unique checkpoint</param>
 		public AzureBlobPersistenceOptions(
 			string containerName = "default",
 			int parallelConnectionLimit = 10,
+			int blobNumPages = 2000,
 			bool forceUniqueCheckpoint = true)
-			: this(TimeSpan.MaxValue, containerName, parallelConnectionLimit, forceUniqueCheckpoint)
+			: this(TimeSpan.MaxValue, containerName, parallelConnectionLimit, blobNumPages, forceUniqueCheckpoint)
 		{ }
 
 		/// <summary>
@@ -68,12 +76,14 @@ namespace NEventStore.Persistence.AzureBlob
 			TimeSpan maxTimeSpanForUndispatched,
 			string containerName = "default",
 			int parallelConnectionLimit = 10,
+			int blobNumPages = 2000,
 			bool forceUniqueCheckpoint = true)
 		{
 			ContainerName = containerName;
 			ParallelConnectionLimit = parallelConnectionLimit;
 			ForceUniqueCheckpoint = forceUniqueCheckpoint;
 			MaxTimeSpanForUndispatched = maxTimeSpanForUndispatched;
+			BlobNumPages = blobNumPages;
 		}
 	}
 }

@@ -8,7 +8,7 @@ namespace NEventStore.Persistence.AzureBlob
 	/// </summary>
 	internal class HeaderDefinitionMetadata
 	{
-		public const int RawSize = 9;
+		public const int RawSize = 8;
 
 		/// <summary>
 		/// Get the start location of the header in bytes
@@ -23,12 +23,6 @@ namespace NEventStore.Persistence.AzureBlob
 		{ get; set; }
 
 		/// <summary>
-		/// Get if there are undispatched commits
-		/// </summary>
-		public bool HasUndispatchedCommits
-		{ get; set; }
-
-		/// <summary>
 		/// Get the raw data.
 		/// </summary>
 		/// <returns></returns>
@@ -38,7 +32,6 @@ namespace NEventStore.Persistence.AzureBlob
 			{
 				WriteToMs(ms, BitConverter.GetBytes(HeaderStartLocationOffsetBytes));
 				WriteToMs(ms, BitConverter.GetBytes(HeaderSizeInBytes));
-				WriteToMs(ms, BitConverter.GetBytes(HasUndispatchedCommits));
 				return ms.ToArray();
 			}
 		}
@@ -50,16 +43,10 @@ namespace NEventStore.Persistence.AzureBlob
 		/// <returns></returns>
 		public static HeaderDefinitionMetadata FromRaw(byte[] raw)
 		{
-			var test = BitConverter.ToInt32(raw, 4);
-			if (test < 0 || test > 100000)
-			{
-				test++;
-			}
 			return new HeaderDefinitionMetadata()
 			{
 				HeaderStartLocationOffsetBytes = BitConverter.ToInt32(raw, 0),
 				HeaderSizeInBytes = BitConverter.ToInt32(raw, 4),
-				HasUndispatchedCommits = BitConverter.ToBoolean(raw, 8),
 			};
 		}
 

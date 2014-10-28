@@ -24,7 +24,6 @@ namespace NEventStore.Persistence.AzureBlob
 		private const string _eventSourcePrefix = "evsrc";
 		private const string _rootContainerName = "$root";
 		private const string _checkpointBlobName = "checkpoint";
-		private const string _checkpointNumberKey = "checkpointnumber";
 		private const string _hasUndispatchedCommitsKey = "hasUndispatchedCommits";
 		private const string _isEventStreamAggregateKey = "isEventStreamAggregate";
 
@@ -664,42 +663,12 @@ namespace NEventStore.Persistence.AzureBlob
 		/// Gets the next checkpoint id
 		/// </summary>
 		/// <returns></returns>
-		private uint GetNextCheckpoint()
+		private ulong GetNextCheckpoint()
 		{
 			var blobContainer = _blobClient.GetContainerReference(_rootContainerName);
-			var checkpointBlob = WrappedPageBlob.GetAssumingExists(blobContainer, _checkpointBlobName);
-
-			if (checkpointBlob == null)
-			{ checkpointBlob = WrappedPageBlob.CreateNew(blobContainer, _checkpointBlobName, 1); }
-
-			uint nextCheckpoint = 1;
-			while (true)
-			{
-				try
-				{
-					string serializedCheckpointNumber;
-					if (checkpointBlob.Metadata.TryGetValue(_checkpointNumberKey, out serializedCheckpointNumber))
-					{
-						nextCheckpoint = Convert.ToUInt32(serializedCheckpointNumber) + 1;
-						checkpointBlob.Metadata[_checkpointNumberKey] = nextCheckpoint.ToString();
-					}
-
-					checkpointBlob.SetMetadata();
-					break;
-				}
-				catch (ConcurrencyException)
-				{
-					if (_options.ForceUniqueCheckpoint)
-					{
-						Logger.Warn("Unique checkpoint fetch failed.  Trying again.  If this happens frequently it could have significant impacts on system performance.  It may warrent turning off forcing of unique checkpoints.");
-						checkpointBlob.RefetchAttributes(true);
-					}
-					else
-					{ break; }
-				}
-			}
-
-			return nextCheckpoint;
+			var checkpointBlob = WrappedPageBlob.CreateNewIfNotExists(blobContainer, _checkpointBlobName, 1);
+			((CloudPageBlob)checkpointBlob).SetSequenceNumber(SequenceNumberAction.Increment, null);
+			return (ulong)((CloudPageBlob)checkpointBlob).Properties.PageBlobSequenceNumber.Value;
 		}
 
 		#endregion

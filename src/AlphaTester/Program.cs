@@ -22,8 +22,8 @@ namespace AlphaTester
 				{ repoType = eRepositoryType.Sql; }
 			}
 
-			var eventsPerAggregate = 150;
-			var aggregatesToMake = 3;
+			var eventsPerAggregate = 30;
+			var aggregatesToMake = 5;
 			if (args.Length > 1)
 			{ aggregatesToMake = Convert.ToInt32(args[1]); }
 
@@ -43,6 +43,7 @@ namespace AlphaTester
 				Stopwatch creationTimer = new Stopwatch();
 				creationTimer.Start();
 				values.Add(42);
+				Thread.Sleep(new Random().Next(0, 1000));
 				var aggy = SimpleAggregate.CreateNew(DateTime.Now, aggregateId, 42);
 				repo.Save(aggy, Guid.NewGuid(), null);
 				creationTimer.Stop();

@@ -90,7 +90,7 @@ namespace AlphaTester
 					var repo = new TestRepository(repoType);
 					var aggy = repo.GetSimpleAggregateById(aggyId, 0);
 
-					testValue = rand.Next(513, (1024*1024*.3 + 8));
+					testValue = rand.Next(513, (int)(1024*1024*.3 + 8));
 					aggy.ChangeFoo(testValue);
 
 					_log.Trace("Saving Aggregate [{0}]", aggyId);

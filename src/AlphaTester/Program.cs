@@ -22,8 +22,8 @@ namespace AlphaTester
 				{ repoType = eRepositoryType.Sql; }
 			}
 
-			var eventsPerAggregate = 30;
-			var aggregatesToMake = 5;
+			var eventsPerAggregate = 10;
+			var aggregatesToMake = 20;
 			if (args.Length > 1)
 			{ aggregatesToMake = Convert.ToInt32(args[1]); }
 
@@ -53,9 +53,8 @@ namespace AlphaTester
 				var commitOptions = new ParallelOptions() { MaxDegreeOfParallelism = 10 };
 				Parallel.For(0, eventsPerAggregate, options, (j) =>
 				{
-					values.Add(j);
 					try
-					{ RetryWhileConcurrent(repoType, aggy.Id, j); }
+					{ values.Add(RetryWhileConcurrent(repoType, aggy.Id, j)); }
 					catch (Exception ex)
 					{ _log.Error("error iteration {0}-{1}, {2}", i, j, ex.ToString()); }
 
@@ -75,8 +74,11 @@ namespace AlphaTester
 			_log.Info("Took [{0}] to source all aggregates", totalTime);
 		}
 
-		private static void RetryWhileConcurrent(eRepositoryType repoType, Guid aggyId, int value)
+		private static int RetryWhileConcurrent(eRepositoryType repoType, Guid aggyId, int value)
 		{
+			var rand = new Random();
+			var testValue = rand.Next((int)(1024 * 1024 * 4), (int)(1024 * 1024 * 5));
+
 			while (true)
 			{
 				try
@@ -87,7 +89,9 @@ namespace AlphaTester
 					_log.Trace("Getting Aggregate [{0}]", aggyId);
 					var repo = new TestRepository(repoType);
 					var aggy = repo.GetSimpleAggregateById(aggyId, 0);
-					aggy.ChangeFoo(value);
+
+					testValue = rand.Next(513, (1024*1024*.3 + 8));
+					aggy.ChangeFoo(testValue);
 
 					_log.Trace("Saving Aggregate [{0}]", aggyId);
 					repo.Save(aggy, Guid.NewGuid(), null);
@@ -98,16 +102,16 @@ namespace AlphaTester
 				catch (ConcurrencyException)
 				{
 					_log.Trace("Concurrency Detected, will retry shortly");
-					var rand = new Random();
 					Thread.Sleep(rand.Next(0, 200));	// this is to increase race condition likelyhood
 				}
 				catch (Exception ex)
 				{
 					_log.Trace("BAD!!!!!! Generic Exception, [{0}], we will let the aggregate retry though", ex.Message);
-					var rand = new Random();
 					Thread.Sleep(rand.Next(0, 200));	// this is to increase race condition likelyhood
 				}
 			}
+
+			return testValue;
 		}
 
 		private static void CheckAggregate(TestRepository repository, Guid aggregateId, IEnumerable<int> valuesItShouldHave)

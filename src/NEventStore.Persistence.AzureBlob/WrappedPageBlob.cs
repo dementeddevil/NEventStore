@@ -129,6 +129,15 @@ namespace NEventStore.Persistence.AzureBlob
 		}
 
 		/// <summary>
+		/// Get the actual name of the page blob
+		/// </summary>
+		public string Name
+		{
+			get
+			{ return _pageBlob.Name; }
+		}
+
+		/// <summary>
 		/// refetches the blob attributes.  this only needs to be done when fresher attributes
 		/// than fetched when the wrapped page was first created
 		/// </summary>
@@ -186,17 +195,75 @@ namespace NEventStore.Persistence.AzureBlob
 		/// <summary>
 		/// Writes to the page blob
 		/// </summary>
-		/// <param name="pageData">must be page size</param>
-		/// <param name="startOffset">must be page aligned</param>
-		/// <param name="accessCondition"></param>
-		public void Write(Stream pageData, int startOffset)
+		/// <param name="pageDataWithHeaderAligned">data to write, aligned with the header appended to it.</param>
+		/// <param name="startOffsetAligned">where writing will start (aligned)</param>
+		/// <param name="currentHeaderDefinition">non aligned offset where the new header will be written</param>
+		/// <param name="newHeaderOffsetBytesNonAligned">start index for where the new header will be written (not aligned)</param>
+		internal void Write(Stream pageDataWithHeaderAligned, int startOffsetAligned,
+			int newHeaderOffsetBytesNonAligned, HeaderDefinitionMetadata currentHeaderDefinition)
 		{
 			try
 			{
-				Logger.Verbose("Writing [{0}] bytes for blob [{1}], etag [{2}]", pageData.Length, _pageBlob.Uri, _pageBlob.Properties.ETag);
-				_pageBlob.WritePages(pageData, startOffset, null,
-					AccessCondition.GenerateIfMatchCondition(_pageBlob.Properties.ETag));
-				Logger.Verbose("Wrote [{0}] bytes for blob [{1}], etag [{2}]", pageData.Length, _pageBlob.Uri, _pageBlob.Properties.ETag);
+				Logger.Verbose("Writing [{0}] bytes for blob [{1}], etag [{2}]", pageDataWithHeaderAligned.Length,
+					_pageBlob.Uri, _pageBlob.Properties.ETag);
+
+				// If our entire payload is less than four megabytes we can write this operation in a single commit.
+				// otherwise we must chunk requiring for some more complex managment of our header data
+				const int maxSingleWriteSizeBytes = 1024 * 1024 * 4;
+				if (pageDataWithHeaderAligned.Length <= maxSingleWriteSizeBytes)
+				{
+					_pageBlob.WritePages(pageDataWithHeaderAligned, startOffsetAligned, null,
+						AccessCondition.GenerateIfMatchCondition(_pageBlob.Properties.ETag));
+				}
+				else
+				{
+					// the first thing we must do is copy the old header to the new assumed location.
+					var seralizedHeader = this.DownloadBytes(currentHeaderDefinition.HeaderStartLocationOffsetBytes,
+									currentHeaderDefinition.HeaderStartLocationOffsetBytes + currentHeaderDefinition.HeaderSizeInBytes);
+
+					// get the start location where we will write the header.  must be page aligned
+					var emptyFirstBytesCount = newHeaderOffsetBytesNonAligned % 512;
+					var headerAlignedStartOffsetBytes = newHeaderOffsetBytesNonAligned - emptyFirstBytesCount;
+					var alignedBytesRequired = GetPageAlignedSize(emptyFirstBytesCount + currentHeaderDefinition.HeaderSizeInBytes);
+					var alignedSerializedHeader = new byte[alignedBytesRequired];
+					Array.Copy(seralizedHeader, 0, alignedSerializedHeader, emptyFirstBytesCount, seralizedHeader.Length);
+					using (var temp = new MemoryStream(alignedSerializedHeader, false))
+					{ _pageBlob.WritePages(temp, headerAlignedStartOffsetBytes, null, AccessCondition.GenerateIfMatchCondition(_pageBlob.Properties.ETag)); }
+
+					var allocatedFourMegs = new byte[maxSingleWriteSizeBytes];
+					var lastAmountRead = 0;
+					int currentOffset = startOffsetAligned;
+
+					// our last write must be at least newHeaderSize in size otherwise we run a risk of having a partial header
+					var newHeaderSize = startOffsetAligned + pageDataWithHeaderAligned.Length - newHeaderOffsetBytesNonAligned;
+					var remainingBytesToWrite = pageDataWithHeaderAligned.Length;
+					while (remainingBytesToWrite != 0)
+					{
+						var amountToWrite = maxSingleWriteSizeBytes;
+						var potentialRemaining = remainingBytesToWrite - amountToWrite;
+						if (potentialRemaining < 0)
+						{ potentialRemaining = remainingBytesToWrite; }
+
+						if (potentialRemaining < newHeaderSize)
+						{
+							int howMuchLessWeNeedToWriteAligned = (int)(newHeaderSize - potentialRemaining);
+							howMuchLessWeNeedToWriteAligned = GetPageAlignedSize(howMuchLessWeNeedToWriteAligned);
+							amountToWrite -= howMuchLessWeNeedToWriteAligned;
+						}
+
+						lastAmountRead = pageDataWithHeaderAligned.Read(allocatedFourMegs, 0, amountToWrite);
+						remainingBytesToWrite -= lastAmountRead;
+						using (var tempStream = new MemoryStream(allocatedFourMegs, 0, lastAmountRead, false, false))
+						{
+							_pageBlob.WritePages(tempStream, currentOffset, null,
+								AccessCondition.GenerateIfMatchCondition(_pageBlob.Properties.ETag));
+						}
+
+						currentOffset += lastAmountRead;
+					}
+				}
+
+				Logger.Verbose("Wrote [{0}] bytes for blob [{1}], etag [{2}]", pageDataWithHeaderAligned.Length, _pageBlob.Uri, _pageBlob.Properties.ETag);
 			}
 			catch (AzureStorage.StorageException ex)
 			{ throw HandleAndRemapCommonExceptions(ex); }

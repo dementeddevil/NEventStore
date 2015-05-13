@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Net;
+using System.Security.Cryptography;
 using System.Threading;
 using Microsoft.WindowsAzure.Storage;
 using Microsoft.WindowsAzure.Storage.Blob;
@@ -143,7 +144,8 @@ namespace NEventStore.Persistence.AzureBlob
 				// this may not be performant enough and may require some sort of index be built.
 				foreach (var pageBlob in blobs)
 				{
-					var header = GetHeaderWithRetry(pageBlob, null);
+					HeaderDefinitionMetadata headerDefinitionMetadata = null;
+					var header = GetHeaderWithRetry(pageBlob, ref headerDefinitionMetadata);
 					foreach (var definition in header.PageBlobCommitDefinitions)
 					{ allCommitDefinitions.Add(new Tuple<WrappedPageBlob, PageBlobCommitDefinition>(pageBlob, definition)); }
 				}
@@ -172,7 +174,8 @@ namespace NEventStore.Persistence.AzureBlob
 			var allCommitDefinitions = new List<Tuple<WrappedPageBlob, PageBlobCommitDefinition>>();
 			foreach (var pageBlob in pageBlobs)
 			{
-				var header = GetHeaderWithRetry(pageBlob, null);
+				HeaderDefinitionMetadata headerDefinitionMetadata = null;
+				var header = GetHeaderWithRetry(pageBlob, ref headerDefinitionMetadata);
 				foreach (var definition in header.PageBlobCommitDefinitions)
 				{
 					if (definition.CommitStampUtc >= start && definition.CommitStampUtc <= end)
@@ -197,7 +200,9 @@ namespace NEventStore.Persistence.AzureBlob
 		public IEnumerable<ICommit> GetFrom(string bucketId, string streamId, int minRevision, int maxRevision)
 		{
 			var pageBlob = WrappedPageBlob.CreateNewIfNotExists(_primaryContainer, bucketId + "/" + streamId, _options.BlobNumPages);
-			var header = GetHeaderWithRetry(pageBlob, null);
+
+			HeaderDefinitionMetadata headerDefinitionMetadata = null;
+			var header = GetHeaderWithRetry(pageBlob, ref headerDefinitionMetadata);
 
 			// find out how many pages we are reading
 			int startPage = 0;
@@ -287,7 +292,8 @@ namespace NEventStore.Persistence.AzureBlob
 							{
 								try
 								{
-									var header = GetHeaderWithRetry(pageBlob, null);
+									HeaderDefinitionMetadata headerDefinitionMetadata = null;
+									var header = GetHeaderWithRetry(pageBlob, ref headerDefinitionMetadata);
 									if (header.UndispatchedCommitCount > 0)
 									{
 										foreach (var definition in header.PageBlobCommitDefinitions)
@@ -309,6 +315,14 @@ namespace NEventStore.Persistence.AzureBlob
 									else
 									{ Logger.Info("Concurrency issue detected while processing undispatched commits.  going to retry to load container"); }
 								}
+								catch (CryptographicException ex)
+								{
+									Logger.Fatal( "Received a CryptographicException while processing aggregate with id [{0}].  The header is possibly be corrupt.  Error is [{1}]",
+										pageBlob.Name, ex.ToString());
+
+									break;
+
+								}
 							}
 						}
 					}
@@ -328,8 +342,8 @@ namespace NEventStore.Persistence.AzureBlob
 		public void MarkCommitAsDispatched(ICommit commit)
 		{
 			var pageBlob = WrappedPageBlob.GetAssumingExists(_primaryContainer, commit.BucketId + "/" + commit.StreamId);
-			var headerDefinitionMetadata = GetHeaderDefinitionMetadata(pageBlob);
-			var header = GetHeaderWithRetry(pageBlob, headerDefinitionMetadata);
+			HeaderDefinitionMetadata headerDefinition = null;
+			var header = GetHeaderWithRetry(pageBlob, ref headerDefinition);
 
 			// we must commit at a page offset, we will just track how many pages in we must start writing at
 			foreach (var commitDefinition in header.PageBlobCommitDefinitions)
@@ -341,7 +355,8 @@ namespace NEventStore.Persistence.AzureBlob
 				}
 			}
 
-			CommitNewMessage(pageBlob, null, header, headerDefinitionMetadata.HeaderStartLocationOffsetBytes);
+			CommitNewMessage(pageBlob, null, header, headerDefinition,
+				headerDefinition.HeaderStartLocationOffsetBytes);
 		}
 
 		/// <summary>
@@ -406,7 +421,8 @@ namespace NEventStore.Persistence.AzureBlob
 		public ICommit Commit(CommitAttempt attempt)
 		{
 			var pageBlob = WrappedPageBlob.CreateNewIfNotExists(_primaryContainer, attempt.BucketId + "/" + attempt.StreamId, _options.BlobNumPages);
-			var header = GetHeaderWithRetry(pageBlob, null);
+			HeaderDefinitionMetadata headerDefinitionMetadata = null;
+			var header = GetHeaderWithRetry(pageBlob, ref headerDefinitionMetadata);
 
 			// we must commit at a page offset, we will just track how many pages in we must start writing at
 			var startPage = 0;
@@ -437,7 +453,7 @@ namespace NEventStore.Persistence.AzureBlob
 			++header.UndispatchedCommitCount;
 			header.LastCommitSequence = attempt.CommitSequence;
 
-			CommitNewMessage(pageBlob, serializedBlobCommit, header, startPage * _blobPageSize);
+			CommitNewMessage(pageBlob, serializedBlobCommit, header, headerDefinitionMetadata, startPage * _blobPageSize);
 			return CreateCommitFromAzureBlobCommit(blobCommit);
 		}
 
@@ -539,7 +555,7 @@ namespace NEventStore.Persistence.AzureBlob
 		/// <param name="blob">The Blob.</param>
 		/// <param name="ignoreAccessCondition">true if the access condition check should be ignored... USE LIGHTLY</param>
 		/// <returns>A populated StreamBlobHeader.</returns>
-		private StreamBlobHeader GetHeaderWithRetry(WrappedPageBlob blob, HeaderDefinitionMetadata prefetched)
+		private StreamBlobHeader GetHeaderWithRetry(WrappedPageBlob blob, ref HeaderDefinitionMetadata prefetched)
 		{
 			prefetched = prefetched ?? GetHeaderDefinitionMetadata(blob);
 			if (prefetched.HeaderSizeInBytes == 0)
@@ -599,19 +615,22 @@ namespace NEventStore.Persistence.AzureBlob
 		}
 
 		/// <summary>
-		/// Commits the header information which essentially commits any transactions that occured
+		/// Commits the header information which essentially commits any transactions that occurred
 		/// related to that header.
 		/// </summary>
 		/// <param name="newCommit">the new commit to write</param>
-		/// <param name="headerStartOffsetBytes">where in the blob the new commit will be written</param>
 		/// <param name="blob">blob header applies to</param>
-		/// <param name="header">the new header data</param>
+		/// <param name="updatedHeader">the new header to be serialized out</param>
+		/// <param name="currentHeaderDefinition">the definition for the current header, before this change is committed</param>
+		/// <param name="nonAlignedBytesUsedAlready">non aligned offset of index where last commit data is stored (not inclusive of header)</param>
 		/// <returns></returns>
-		private void CommitNewMessage(WrappedPageBlob blob, byte[] newCommit, StreamBlobHeader header, int offsetBytes)
+		private void CommitNewMessage(WrappedPageBlob blob, byte[] newCommit,
+			StreamBlobHeader updatedHeader, HeaderDefinitionMetadata currentHeaderDefinition,
+			int nonAlignedBytesUsedAlready)
 		{
 			newCommit = newCommit ?? new byte[0];
-			var serializedHeader = _serializer.Serialize(header);
-			var writeStartLocationAligned = GetPageAlignedSize(offsetBytes);
+			var serializedHeader = _serializer.Serialize(updatedHeader);
+			var writeStartLocationAligned = GetPageAlignedSize(nonAlignedBytesUsedAlready);
 			var amountToWriteAligned = GetPageAlignedSize(serializedHeader.Length + newCommit.Length);
 			var totalSpaceNeeded = writeStartLocationAligned + amountToWriteAligned;
 
@@ -627,7 +646,7 @@ namespace NEventStore.Persistence.AzureBlob
 			headerDefinitionMetadata.HeaderSizeInBytes = serializedHeader.Length;
 			headerDefinitionMetadata.HeaderStartLocationOffsetBytes = writeStartLocationAligned + newCommit.Length;
 			blob.Metadata[_isEventStreamAggregateKey] = "yes";
-			blob.Metadata[_hasUndispatchedCommitsKey] = header.PageBlobCommitDefinitions.Any((x) => !x.IsDispatched).ToString();
+			blob.Metadata[_hasUndispatchedCommitsKey] = updatedHeader.PageBlobCommitDefinitions.Any((x) => !x.IsDispatched).ToString();
 			if (blob.Metadata.ContainsKey(_primaryHeaderDefinitionKey))
 			{ blob.Metadata[_fallbackHeaderDefinitionKey] = blob.Metadata[_primaryHeaderDefinitionKey]; }
 			blob.Metadata[_primaryHeaderDefinitionKey] = Convert.ToBase64String(headerDefinitionMetadata.GetRaw());
@@ -648,7 +667,9 @@ namespace NEventStore.Persistence.AzureBlob
 				}
 
 				ms.Position = 0;
-				blob.Write(ms, writeStartLocationAligned);
+
+				var newHeaderStartLocationNonAligned = writeStartLocationAligned + newCommit.Length;
+				blob.Write(ms, writeStartLocationAligned, newHeaderStartLocationNonAligned, currentHeaderDefinition);
 			}
 		}
 

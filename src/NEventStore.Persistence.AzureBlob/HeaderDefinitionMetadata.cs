@@ -37,6 +37,19 @@ namespace NEventStore.Persistence.AzureBlob
 		}
 
 		/// <summary>
+		/// Clones the header definition
+		/// </summary>
+		/// <returns></returns>
+		public HeaderDefinitionMetadata Clone()
+		{
+			return new HeaderDefinitionMetadata()
+			{
+				HeaderStartLocationOffsetBytes = this.HeaderStartLocationOffsetBytes,
+				HeaderSizeInBytes = this.HeaderSizeInBytes
+			};
+		}
+
+		/// <summary>
 		/// Create a header definition from raw data
 		/// </summary>
 		/// <param name="raw"></param>

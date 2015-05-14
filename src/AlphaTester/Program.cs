@@ -23,7 +23,7 @@ namespace AlphaTester
 			}
 
 			var eventsPerAggregate = 10;
-			var aggregatesToMake = 20;
+			var aggregatesToMake = 1;
 			if (args.Length > 1)
 			{ aggregatesToMake = Convert.ToInt32(args[1]); }
 
@@ -77,7 +77,7 @@ namespace AlphaTester
 		private static int RetryWhileConcurrent(eRepositoryType repoType, Guid aggyId, int value)
 		{
 			var rand = new Random();
-			var testValue = rand.Next((int)(1024 * 1024 * 4), (int)(1024 * 1024 * 5));
+			int testValue = rand.Next(513, (int)(1024 * 1024 * .3 + 8));
 
 			while (true)
 			{
@@ -90,7 +90,6 @@ namespace AlphaTester
 					var repo = new TestRepository(repoType);
 					var aggy = repo.GetSimpleAggregateById(aggyId, 0);
 
-					testValue = rand.Next(513, (int)(1024*1024*.3 + 8));
 					aggy.ChangeFoo(testValue);
 
 					_log.Trace("Saving Aggregate [{0}]", aggyId);

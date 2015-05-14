@@ -32,7 +32,8 @@ namespace NEventStore.Persistence.AzureBlob
 		// is the header definition that is what we hope will be correct.  The fallback is there for the case where we write the
 		// definition, but fail to write the header correctly.
 		private const string _primaryHeaderDefinitionKey = "primaryHeaderDefinition";
-		private const string _fallbackHeaderDefinitionKey = "fallbackHeaderDefinition";
+		private const string _secondaryHeaderDefinitionKey = "fallbackHeaderDefinition";
+		private const string _terciaryHeaderDefintionKey = "terciaryHeaderDefintionKey";
 
 		private const int _blobPageSize = 512;
 		private readonly ISerialize _serializer;
@@ -145,7 +146,7 @@ namespace NEventStore.Persistence.AzureBlob
 				foreach (var pageBlob in blobs)
 				{
 					HeaderDefinitionMetadata headerDefinitionMetadata = null;
-					var header = GetHeaderWithRetry(pageBlob, ref headerDefinitionMetadata);
+					var header = GetHeaderWithRetry(pageBlob, out headerDefinitionMetadata);
 					foreach (var definition in header.PageBlobCommitDefinitions)
 					{ allCommitDefinitions.Add(new Tuple<WrappedPageBlob, PageBlobCommitDefinition>(pageBlob, definition)); }
 				}
@@ -175,7 +176,7 @@ namespace NEventStore.Persistence.AzureBlob
 			foreach (var pageBlob in pageBlobs)
 			{
 				HeaderDefinitionMetadata headerDefinitionMetadata = null;
-				var header = GetHeaderWithRetry(pageBlob, ref headerDefinitionMetadata);
+				var header = GetHeaderWithRetry(pageBlob, out headerDefinitionMetadata);
 				foreach (var definition in header.PageBlobCommitDefinitions)
 				{
 					if (definition.CommitStampUtc >= start && definition.CommitStampUtc <= end)
@@ -202,7 +203,7 @@ namespace NEventStore.Persistence.AzureBlob
 			var pageBlob = WrappedPageBlob.CreateNewIfNotExists(_primaryContainer, bucketId + "/" + streamId, _options.BlobNumPages);
 
 			HeaderDefinitionMetadata headerDefinitionMetadata = null;
-			var header = GetHeaderWithRetry(pageBlob, ref headerDefinitionMetadata);
+			var header = GetHeaderWithRetry(pageBlob, out headerDefinitionMetadata);
 
 			// find out how many pages we are reading
 			int startPage = 0;
@@ -293,7 +294,7 @@ namespace NEventStore.Persistence.AzureBlob
 								try
 								{
 									HeaderDefinitionMetadata headerDefinitionMetadata = null;
-									var header = GetHeaderWithRetry(pageBlob, ref headerDefinitionMetadata);
+									var header = GetHeaderWithRetry(pageBlob, out headerDefinitionMetadata);
 									if (header.UndispatchedCommitCount > 0)
 									{
 										foreach (var definition in header.PageBlobCommitDefinitions)
@@ -317,7 +318,14 @@ namespace NEventStore.Persistence.AzureBlob
 								}
 								catch (CryptographicException ex)
 								{
-									Logger.Fatal( "Received a CryptographicException while processing aggregate with id [{0}].  The header is possibly be corrupt.  Error is [{1}]",
+									Logger.Fatal("Received a CryptographicException while processing aggregate with id [{0}].  The header is possibly be corrupt.  Error is [{1}]",
+										pageBlob.Name, ex.ToString());
+
+									break;
+								}
+								catch (InvalidHeaderDataException ex)
+								{
+									Logger.Fatal("Received a InvalidHeaderDataException while processing aggregate with id [{0}].  The header is possibly be corrupt.  Error is [{1}]",
 										pageBlob.Name, ex.ToString());
 
 									break;
@@ -343,7 +351,7 @@ namespace NEventStore.Persistence.AzureBlob
 		{
 			var pageBlob = WrappedPageBlob.GetAssumingExists(_primaryContainer, commit.BucketId + "/" + commit.StreamId);
 			HeaderDefinitionMetadata headerDefinition = null;
-			var header = GetHeaderWithRetry(pageBlob, ref headerDefinition);
+			var header = GetHeaderWithRetry(pageBlob, out headerDefinition);
 
 			// we must commit at a page offset, we will just track how many pages in we must start writing at
 			foreach (var commitDefinition in header.PageBlobCommitDefinitions)
@@ -422,7 +430,7 @@ namespace NEventStore.Persistence.AzureBlob
 		{
 			var pageBlob = WrappedPageBlob.CreateNewIfNotExists(_primaryContainer, attempt.BucketId + "/" + attempt.StreamId, _options.BlobNumPages);
 			HeaderDefinitionMetadata headerDefinitionMetadata = null;
-			var header = GetHeaderWithRetry(pageBlob, ref headerDefinitionMetadata);
+			var header = GetHeaderWithRetry(pageBlob, out headerDefinitionMetadata);
 
 			// we must commit at a page offset, we will just track how many pages in we must start writing at
 			var startPage = 0;
@@ -536,9 +544,17 @@ namespace NEventStore.Persistence.AzureBlob
 		/// </summary>
 		/// <param name="blob"></param>
 		/// <returns></returns>
-		private HeaderDefinitionMetadata GetHeaderDefinitionMetadata(WrappedPageBlob blob, bool useFallback = false)
+		private HeaderDefinitionMetadata GetHeaderDefinitionMetadata(WrappedPageBlob blob, int index = 0)
 		{
-			var keyToUse = useFallback ? _fallbackHeaderDefinitionKey : _primaryHeaderDefinitionKey;
+			string keyToUse = null;
+			if (index == 0)
+			{ keyToUse = _primaryHeaderDefinitionKey; }
+			else if (index == 1)
+			{ keyToUse = _secondaryHeaderDefinitionKey; }
+			else if (index == 2)
+			{ keyToUse = _terciaryHeaderDefintionKey; }
+			else
+			{ throw new ArgumentException("value must be 0, 1, or 2 for primary, secondary, or terciary respectively.", "index"); }
 
 			HeaderDefinitionMetadata headerDefinition;
 			string serializedHeaderDefinition;
@@ -550,30 +566,40 @@ namespace NEventStore.Persistence.AzureBlob
 		}
 
 		/// <summary>
-		/// Gets the deserialized header from the blob.
+		/// Gets the deserialized header from the blob.  Uses
 		/// </summary>
 		/// <param name="blob">The Blob.</param>
-		/// <param name="ignoreAccessCondition">true if the access condition check should be ignored... USE LIGHTLY</param>
+		/// <param name="assumedValidHeaderDefinition">will output the header definition that is valid, null if there is not currently one</param>
 		/// <returns>A populated StreamBlobHeader.</returns>
-		private StreamBlobHeader GetHeaderWithRetry(WrappedPageBlob blob, ref HeaderDefinitionMetadata prefetched)
+		private StreamBlobHeader GetHeaderWithRetry(WrappedPageBlob blob, out HeaderDefinitionMetadata validHeaderDefinition)
 		{
-			prefetched = prefetched ?? GetHeaderDefinitionMetadata(blob);
-			if (prefetched.HeaderSizeInBytes == 0)
-			{ return new StreamBlobHeader(); }
+			var assumedValidHeaderDefinition = GetHeaderDefinitionMetadata(blob);
+			if (assumedValidHeaderDefinition.HeaderSizeInBytes == 0)
+			{
+				validHeaderDefinition = assumedValidHeaderDefinition;
+				return new StreamBlobHeader();
+			}
 
 			var lastException = new Exception(""); ;
-			var header = SafeGetHeader(blob, prefetched, out lastException);
+			var header = SafeGetHeader(blob, assumedValidHeaderDefinition, out lastException);
 			if (header == null)
 			{
-				prefetched = GetHeaderDefinitionMetadata(blob, true);
-				header = SafeGetHeader(blob, prefetched, out lastException);
+				assumedValidHeaderDefinition = GetHeaderDefinitionMetadata(blob, 1);
+				header = SafeGetHeader(blob, assumedValidHeaderDefinition, out lastException);
+			}
+
+			if (header == null)
+			{
+				assumedValidHeaderDefinition = GetHeaderDefinitionMetadata(blob, 2);
+				header = SafeGetHeader(blob, assumedValidHeaderDefinition, out lastException);
 			}
 
 			if (header != null)
-			{ return header; }
+			{
+				validHeaderDefinition = assumedValidHeaderDefinition;
+				return header;
+			}
 
-			// this should trigger a concurrency
-			blob.RefetchAttributes(false);
 			throw lastException;
 		}
 
@@ -591,6 +617,9 @@ namespace NEventStore.Persistence.AzureBlob
 
 			try
 			{
+				if (headerDefinition.HeaderSizeInBytes == 0)
+				{ throw new InvalidHeaderDataException(string.Format("Attempted to download a header, but the size specified is zero.  This aggregate with id [{0}] may be corrupt.", blob.Name)); }
+
 				var downloadedData = blob.DownloadBytes(headerDefinition.HeaderStartLocationOffsetBytes,
 									headerDefinition.HeaderStartLocationOffsetBytes + headerDefinition.HeaderSizeInBytes);
 
@@ -633,6 +662,7 @@ namespace NEventStore.Persistence.AzureBlob
 			var writeStartLocationAligned = GetPageAlignedSize(nonAlignedBytesUsedAlready);
 			var amountToWriteAligned = GetPageAlignedSize(serializedHeader.Length + newCommit.Length);
 			var totalSpaceNeeded = writeStartLocationAligned + amountToWriteAligned;
+			var newHeaderStartLocationNonAligned = writeStartLocationAligned + newCommit.Length;
 
 			var totalBlobLength = blob.Properties.Length;
 			if (totalBlobLength < totalSpaceNeeded)
@@ -648,7 +678,14 @@ namespace NEventStore.Persistence.AzureBlob
 			blob.Metadata[_isEventStreamAggregateKey] = "yes";
 			blob.Metadata[_hasUndispatchedCommitsKey] = updatedHeader.PageBlobCommitDefinitions.Any((x) => !x.IsDispatched).ToString();
 			if (blob.Metadata.ContainsKey(_primaryHeaderDefinitionKey))
-			{ blob.Metadata[_fallbackHeaderDefinitionKey] = blob.Metadata[_primaryHeaderDefinitionKey]; }
+			{
+				blob.Metadata[_secondaryHeaderDefinitionKey] = blob.Metadata[_primaryHeaderDefinitionKey];
+
+				// this is a thirt layer backup in the case we have a issue in the middle of this upcoming write operation.
+				var tempHeaderDefinition = currentHeaderDefinition.Clone();
+				tempHeaderDefinition.HeaderStartLocationOffsetBytes = newHeaderStartLocationNonAligned;
+				blob.Metadata[_terciaryHeaderDefintionKey] = Convert.ToBase64String(tempHeaderDefinition.GetRaw());
+			}
 			blob.Metadata[_primaryHeaderDefinitionKey] = Convert.ToBase64String(headerDefinitionMetadata.GetRaw());
 			blob.SetMetadata();
 
@@ -668,7 +705,6 @@ namespace NEventStore.Persistence.AzureBlob
 
 				ms.Position = 0;
 
-				var newHeaderStartLocationNonAligned = writeStartLocationAligned + newCommit.Length;
 				blob.Write(ms, writeStartLocationAligned, newHeaderStartLocationNonAligned, currentHeaderDefinition);
 			}
 		}

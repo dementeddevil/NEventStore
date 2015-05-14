@@ -23,7 +23,7 @@ namespace AlphaTester
 			}
 
 			var eventsPerAggregate = 10;
-			var aggregatesToMake = 1;
+			var aggregatesToMake = 5;
 			if (args.Length > 1)
 			{ aggregatesToMake = Convert.ToInt32(args[1]); }
 
@@ -45,9 +45,23 @@ namespace AlphaTester
 				values.Add(42);
 				Thread.Sleep(new Random().Next(0, 1000));
 				var aggy = SimpleAggregate.CreateNew(DateTime.Now, aggregateId, 42);
-				repo.Save(aggy, Guid.NewGuid(), null);
+
+				while (true)
+				{
+					try
+					{
+						_log.Trace("TRYING TO CREATE AGG WITH ID [{0}]", aggy.Id);
+						repo.Save(aggy, Guid.NewGuid(), null);
+						break;
+					}
+					catch (Exception ex)
+					{
+						_log.Error(string.Format("Will retry, but failed to create aggregate with id [{0}], [{1}]",
+							aggy.Id, ex.Message));
+					}
+				}
 				creationTimer.Stop();
-				_log.Trace("Create aggy in [{0}]", creationTimer.Elapsed);
+				_log.Trace("Created aggy in [{0}]", creationTimer.Elapsed);
 
 				Random random = new Random();
 				var commitOptions = new ParallelOptions() { MaxDegreeOfParallelism = 10 };

@@ -27,6 +27,7 @@ namespace NEventStore.Persistence.AzureBlob
 		private const string _checkpointBlobName = "checkpoint";
 		private const string _hasUndispatchedCommitsKey = "hasUndispatchedCommits";
 		private const string _isEventStreamAggregateKey = "isEventStreamAggregate";
+		private const string _firstWriteCompletedKey = "firstWriteCompleted";
 
 		// because of the two phase commit nature of this system, we always work with two header definitions.  the primary
 		// is the header definition that is what we hope will be correct.  The fallback is there for the case where we write the
@@ -556,12 +557,11 @@ namespace NEventStore.Persistence.AzureBlob
 			else
 			{ throw new ArgumentException("value must be 0, 1, or 2 for primary, secondary, or terciary respectively.", "index"); }
 
-			HeaderDefinitionMetadata headerDefinition;
+			HeaderDefinitionMetadata headerDefinition = null;
 			string serializedHeaderDefinition;
 			if (blob.Metadata.TryGetValue(keyToUse, out serializedHeaderDefinition))
 			{ headerDefinition = HeaderDefinitionMetadata.FromRaw(Convert.FromBase64String(serializedHeaderDefinition)); }
-			else
-			{ headerDefinition = new HeaderDefinitionMetadata(); }
+
 			return headerDefinition;
 		}
 
@@ -573,25 +573,54 @@ namespace NEventStore.Persistence.AzureBlob
 		/// <returns>A populated StreamBlobHeader.</returns>
 		private StreamBlobHeader GetHeaderWithRetry(WrappedPageBlob blob, out HeaderDefinitionMetadata validHeaderDefinition)
 		{
-			var assumedValidHeaderDefinition = GetHeaderDefinitionMetadata(blob);
-			if (assumedValidHeaderDefinition.HeaderSizeInBytes == 0)
+			HeaderDefinitionMetadata assumedValidHeaderDefinition = null;
+			StreamBlobHeader header = null;
+			Exception lastException = null;
+
+			// first, if the primary header metadata key does not exist then we default
+			if (!blob.Metadata.ContainsKey(_primaryHeaderDefinitionKey))
 			{
-				validHeaderDefinition = assumedValidHeaderDefinition;
-				return new StreamBlobHeader();
+				assumedValidHeaderDefinition = new HeaderDefinitionMetadata();
+				header = new StreamBlobHeader();
 			}
 
-			var lastException = new Exception(""); ;
-			var header = SafeGetHeader(blob, assumedValidHeaderDefinition, out lastException);
+			// try the primary header definition
+			if (header == null)
+			{
+				assumedValidHeaderDefinition = GetHeaderDefinitionMetadata(blob);
+				header = SafeGetHeader(blob, assumedValidHeaderDefinition, out lastException);
+			}
+			
+			// try the secondary header definition
 			if (header == null)
 			{
 				assumedValidHeaderDefinition = GetHeaderDefinitionMetadata(blob, 1);
 				header = SafeGetHeader(blob, assumedValidHeaderDefinition, out lastException);
 			}
 
+			// try the terciary header definition
 			if (header == null)
 			{
 				assumedValidHeaderDefinition = GetHeaderDefinitionMetadata(blob, 2);
 				header = SafeGetHeader(blob, assumedValidHeaderDefinition, out lastException);
+			}
+
+			// It is possible we will still have no header here and still be in an ok state.  This is a case where the aggregates first
+			// commit set some metadata (specifically) the _primaryHeaderDefinitionKey, but then failed to write the header.  This case
+			// will have a _primaryHeaderDefinitionKey but no secondary or terciary.  In addition it will have a key of first write succeeded
+			// set to false.  If it does not have any key at all, it is a "legacy" one and will get the key set upon a future successful write.
+			// legacy ones with issue will continue to fail and require manual intervention currently
+			if (header == null)
+			{
+				string firstWriteCompleted;
+				if (blob.Metadata.TryGetValue(_firstWriteCompletedKey, out firstWriteCompleted))
+				{
+					if (firstWriteCompleted == "f")
+					{
+ 						header = new StreamBlobHeader();
+						assumedValidHeaderDefinition = new HeaderDefinitionMetadata();
+					}
+				}
 			}
 
 			if (header != null)
@@ -600,7 +629,7 @@ namespace NEventStore.Persistence.AzureBlob
 				return header;
 			}
 
-			throw lastException;
+			throw lastException ?? new Exception("No header could be created"); ;
 		}
 
 		/// <summary>
@@ -617,7 +646,7 @@ namespace NEventStore.Persistence.AzureBlob
 
 			try
 			{
-				if (headerDefinition.HeaderSizeInBytes == 0)
+				if (headerDefinition == null || headerDefinition.HeaderSizeInBytes == 0)
 				{ throw new InvalidHeaderDataException(string.Format("Attempted to download a header, but the size specified is zero.  This aggregate with id [{0}] may be corrupt.", blob.Name)); }
 
 				var downloadedData = blob.DownloadBytes(headerDefinition.HeaderStartLocationOffsetBytes,
@@ -650,11 +679,11 @@ namespace NEventStore.Persistence.AzureBlob
 		/// <param name="newCommit">the new commit to write</param>
 		/// <param name="blob">blob header applies to</param>
 		/// <param name="updatedHeader">the new header to be serialized out</param>
-		/// <param name="currentHeaderDefinition">the definition for the current header, before this change is committed</param>
+		/// <param name="currentGoodHeaderDefinition">the definition for the current header, before this change is committed</param>
 		/// <param name="nonAlignedBytesUsedAlready">non aligned offset of index where last commit data is stored (not inclusive of header)</param>
 		/// <returns></returns>
 		private void CommitNewMessage(WrappedPageBlob blob, byte[] newCommit,
-			StreamBlobHeader updatedHeader, HeaderDefinitionMetadata currentHeaderDefinition,
+			StreamBlobHeader updatedHeader, HeaderDefinitionMetadata currentGoodHeaderDefinition,
 			int nonAlignedBytesUsedAlready)
 		{
 			newCommit = newCommit ?? new byte[0];
@@ -672,20 +701,26 @@ namespace NEventStore.Persistence.AzureBlob
 			}
 
 			// set the header definition to make it all official
+			bool isFirstWrite = currentGoodHeaderDefinition.HeaderSizeInBytes == 0;
 			var headerDefinitionMetadata = new HeaderDefinitionMetadata();
 			headerDefinitionMetadata.HeaderSizeInBytes = serializedHeader.Length;
 			headerDefinitionMetadata.HeaderStartLocationOffsetBytes = writeStartLocationAligned + newCommit.Length;
 			blob.Metadata[_isEventStreamAggregateKey] = "yes";
 			blob.Metadata[_hasUndispatchedCommitsKey] = updatedHeader.PageBlobCommitDefinitions.Any((x) => !x.IsDispatched).ToString();
-			if (blob.Metadata.ContainsKey(_primaryHeaderDefinitionKey))
+
+			if (!isFirstWrite)
 			{
-				blob.Metadata[_secondaryHeaderDefinitionKey] = blob.Metadata[_primaryHeaderDefinitionKey];
+				blob.Metadata[_secondaryHeaderDefinitionKey] = Convert.ToBase64String(currentGoodHeaderDefinition.GetRaw());
 
 				// this is a thirt layer backup in the case we have a issue in the middle of this upcoming write operation.
-				var tempHeaderDefinition = currentHeaderDefinition.Clone();
+				var tempHeaderDefinition = currentGoodHeaderDefinition.Clone();
 				tempHeaderDefinition.HeaderStartLocationOffsetBytes = newHeaderStartLocationNonAligned;
 				blob.Metadata[_terciaryHeaderDefintionKey] = Convert.ToBase64String(tempHeaderDefinition.GetRaw());
+				blob.Metadata[_firstWriteCompletedKey] = "t";
 			}
+			else
+			{ blob.Metadata[_firstWriteCompletedKey] = "f"; }
+
 			blob.Metadata[_primaryHeaderDefinitionKey] = Convert.ToBase64String(headerDefinitionMetadata.GetRaw());
 			blob.SetMetadata();
 
@@ -704,8 +739,19 @@ namespace NEventStore.Persistence.AzureBlob
 				}
 
 				ms.Position = 0;
+				blob.Write(ms, writeStartLocationAligned, newHeaderStartLocationNonAligned, currentGoodHeaderDefinition);
+			}
 
-				blob.Write(ms, writeStartLocationAligned, newHeaderStartLocationNonAligned, currentHeaderDefinition);
+			// we pay the cost of an extra call for our first ever write (this is effectively creation of the aggregate.
+			// we do this because we actually host our header in the blob, but the reference to that header in our metadata.
+			// we set the metadata with the potential states prior to actually writing the new header.  If this was the first
+			// ever write and we set the metadata, but then fail to write the header, we can get in a state where the aggregate
+			// becomes unusable because it believes there should be a header according to the metadata.
+			// For that reason we must record when our first write completes
+			if (isFirstWrite)
+			{
+				blob.Metadata[_firstWriteCompletedKey] = "t";
+				blob.SetMetadata();
 			}
 		}
 

@@ -545,7 +545,7 @@ namespace NEventStore.Persistence.AzureBlob
 		/// </summary>
 		/// <param name="blob"></param>
 		/// <returns></returns>
-		private HeaderDefinitionMetadata GetHeaderDefinitionMetadata(WrappedPageBlob blob, int index = 0)
+		private HeaderDefinitionMetadata GetHeaderDefinitionMetadata(WrappedPageBlob blob, int index)
 		{
 			string keyToUse = null;
 			if (index == 0)
@@ -584,25 +584,17 @@ namespace NEventStore.Persistence.AzureBlob
 				header = new StreamBlobHeader();
 			}
 
-			// try the primary header definition
+			// do the fallback logic to try and find a valid header
 			if (header == null)
 			{
-				assumedValidHeaderDefinition = GetHeaderDefinitionMetadata(blob);
-				header = SafeGetHeader(blob, assumedValidHeaderDefinition, out lastException);
-			}
-			
-			// try the secondary header definition
-			if (header == null)
-			{
-				assumedValidHeaderDefinition = GetHeaderDefinitionMetadata(blob, 1);
-				header = SafeGetHeader(blob, assumedValidHeaderDefinition, out lastException);
-			}
+				for (int i = 0; i != 3; ++i)
+				{
+					assumedValidHeaderDefinition = GetHeaderDefinitionMetadata(blob, i);
+					header = SafeGetHeader(blob, assumedValidHeaderDefinition, out lastException);
 
-			// try the terciary header definition
-			if (header == null)
-			{
-				assumedValidHeaderDefinition = GetHeaderDefinitionMetadata(blob, 2);
-				header = SafeGetHeader(blob, assumedValidHeaderDefinition, out lastException);
+					if (header != null)
+					{ break; }
+				}
 			}
 
 			// It is possible we will still have no header here and still be in an ok state.  This is a case where the aggregates first

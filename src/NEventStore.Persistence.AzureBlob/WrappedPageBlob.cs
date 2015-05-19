@@ -217,18 +217,22 @@ namespace NEventStore.Persistence.AzureBlob
 				}
 				else
 				{
-					// the first thing we must do is copy the old header to the new assumed location.
-					var seralizedHeader = this.DownloadBytes(currentHeaderDefinition.HeaderStartLocationOffsetBytes,
-									currentHeaderDefinition.HeaderStartLocationOffsetBytes + currentHeaderDefinition.HeaderSizeInBytes);
+					// if there is no header yet, then we have nothing to do around saving off the old header.
+					if (currentHeaderDefinition.HeaderSizeInBytes != 0)
+					{
+						// the first thing we must do is copy the old header to the new assumed location.
+						var seralizedHeader = this.DownloadBytes(currentHeaderDefinition.HeaderStartLocationOffsetBytes,
+										currentHeaderDefinition.HeaderStartLocationOffsetBytes + currentHeaderDefinition.HeaderSizeInBytes);
 
-					// get the start location where we will write the header.  must be page aligned
-					var emptyFirstBytesCount = newHeaderOffsetBytesNonAligned % 512;
-					var headerAlignedStartOffsetBytes = newHeaderOffsetBytesNonAligned - emptyFirstBytesCount;
-					var alignedBytesRequired = GetPageAlignedSize(emptyFirstBytesCount + currentHeaderDefinition.HeaderSizeInBytes);
-					var alignedSerializedHeader = new byte[alignedBytesRequired];
-					Array.Copy(seralizedHeader, 0, alignedSerializedHeader, emptyFirstBytesCount, seralizedHeader.Length);
-					using (var temp = new MemoryStream(alignedSerializedHeader, false))
-					{ _pageBlob.WritePages(temp, headerAlignedStartOffsetBytes, null, AccessCondition.GenerateIfMatchCondition(_pageBlob.Properties.ETag)); }
+						// get the start location where we will write the header.  must be page aligned
+						var emptyFirstBytesCount = newHeaderOffsetBytesNonAligned % 512;
+						var headerAlignedStartOffsetBytes = newHeaderOffsetBytesNonAligned - emptyFirstBytesCount;
+						var alignedBytesRequired = GetPageAlignedSize(emptyFirstBytesCount + currentHeaderDefinition.HeaderSizeInBytes);
+						var alignedSerializedHeader = new byte[alignedBytesRequired];
+						Array.Copy(seralizedHeader, 0, alignedSerializedHeader, emptyFirstBytesCount, seralizedHeader.Length);
+						using (var temp = new MemoryStream(alignedSerializedHeader, false))
+						{ _pageBlob.WritePages(temp, headerAlignedStartOffsetBytes, null, AccessCondition.GenerateIfMatchCondition(_pageBlob.Properties.ETag)); }
+					}
 
 					var allocatedFourMegs = new byte[maxSingleWriteSizeBytes];
 					var lastAmountRead = 0;

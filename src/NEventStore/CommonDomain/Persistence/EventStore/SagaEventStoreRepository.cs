@@ -1,170 +1,179 @@
 namespace CommonDomain.Persistence.EventStore
 {
-	using System;
-	using System.Collections.Generic;
-	using System.Linq;
+    using System;
+    using System.Collections.Generic;
+    using System.Linq;
 
-	using NEventStore;
-	using NEventStore.Persistence;
+    using NEventStore;
+    using NEventStore.Persistence;
 
-	public class SagaEventStoreRepository : ISagaRepository, IDisposable
-	{
-		private const string SagaTypeHeader = "SagaType";
+    public class SagaEventStoreRepository : ISagaRepository, IDisposable
+    {
+        private const string SagaTypeHeader = "SagaType";
 
-		private const string UndispatchedMessageHeader = "UndispatchedMessage.";
+        private const string UndispatchedMessageHeader = "UndispatchedMessage.";
 
-		private readonly IStoreEvents eventStore;
+        private readonly IStoreEvents eventStore;
 
-		private readonly IDictionary<string, IEventStream> streams = new Dictionary<string, IEventStream>();
+        private readonly IConstructSagas factory;
 
-		public SagaEventStoreRepository(IStoreEvents eventStore)
-		{
-			this.eventStore = eventStore;
-		}
+        private readonly IDictionary<string, IEventStream> streams = new Dictionary<string, IEventStream>();
 
-		public void Dispose()
-		{
-			this.Dispose(true);
-			GC.SuppressFinalize(this);
-		}
+        public SagaEventStoreRepository(IStoreEvents eventStore, IConstructSagas factory)
+        {
+            Guard.NotNull(() => eventStore, eventStore);
+            Guard.NotNull(() => factory, factory);
+            this.eventStore = eventStore;
+            this.factory = factory;
+        }
 
-		public TSaga GetById<TSaga>(Guid sagaId) where TSaga : class, ISaga, new()
-		{
-			return GetById<TSaga>(Bucket.Default, sagaId);
-		}
+        public void Dispose()
+        {
+            this.Dispose(true);
+            GC.SuppressFinalize(this);
+        }
 
-		public TSaga GetById<TSaga>(string bucketId, Guid sagaId) where TSaga : class, ISaga, new()
-		{
-			return BuildSaga<TSaga>(this.OpenStream(bucketId, sagaId));
-		}
+        public TSaga GetById<TSaga>(Guid sagaId) where TSaga : class, ISaga, new()
+        {
+            return GetById<TSaga>(Bucket.Default, sagaId);
+        }
 
-		public void Save(ISaga saga, Guid commitId, Action<IDictionary<string, object>> updateHeaders)
-		{
-			Save(Bucket.Default, saga, commitId, updateHeaders);
-		}
+        public TSaga GetById<TSaga>(string bucketId, Guid sagaId) where TSaga : class, ISaga, new()
+        {
+            ISaga saga = this.GetSaga<TSaga>();
+            ApplyEventsToSaga(this.OpenStream(bucketId, sagaId), saga);
+            return saga as TSaga;
+        }
 
-		public void Save(string bucketId, ISaga saga, Guid commitId, Action<IDictionary<string, object>> updateHeaders)
-		{
-			if (saga == null)
-			{
-				throw new ArgumentNullException("saga", ExceptionMessages.NullArgument);
-			}
+        public void Save(ISaga saga, Guid commitId, Action<IDictionary<string, object>> updateHeaders)
+        {
+            Save(Bucket.Default, saga, commitId, updateHeaders);
+        }
 
-			Dictionary<string, object> headers = PrepareHeaders(saga, updateHeaders);
-			IEventStream stream = this.PrepareStream(bucketId, saga, headers);
+        public void Save(string bucketId, ISaga saga, Guid commitId, Action<IDictionary<string, object>> updateHeaders)
+        {
+            if (saga == null)
+            {
+                throw new ArgumentNullException("saga", ExceptionMessages.NullArgument);
+            }
 
-			Persist(stream, commitId);
+            Dictionary<string, object> headers = PrepareHeaders(saga, updateHeaders);
+            IEventStream stream = this.PrepareStream(bucketId, saga, headers);
 
-			saga.ClearUncommittedEvents();
-			saga.ClearUndispatchedMessages();
-		}
+            Persist(stream, commitId);
 
-		protected virtual void Dispose(bool disposing)
-		{
-			if (!disposing)
-			{
-				return;
-			}
+            saga.ClearUncommittedEvents();
+            saga.ClearUndispatchedMessages();
+        }
 
-			lock (this.streams)
-			{
-				foreach (var stream in this.streams)
-				{
-					stream.Value.Dispose();
-				}
+        protected virtual void Dispose(bool disposing)
+        {
+            if (!disposing)
+            {
+                return;
+            }
 
-				this.streams.Clear();
-			}
-		}
+            lock (this.streams)
+            {
+                foreach (var stream in this.streams)
+                {
+                    stream.Value.Dispose();
+                }
 
-		private IEventStream OpenStream(string bucketId, Guid sagaId)
-		{
-			IEventStream stream;
-			string streamsId = bucketId + sagaId;
+                this.streams.Clear();
+            }
+        }
 
-			if (this.streams.TryGetValue(streamsId, out stream))
-			{ return stream; }
+        private IEventStream OpenStream(string bucketId, Guid sagaId)
+        {
+            IEventStream stream;
+            string streamsId = bucketId + sagaId;
 
-			try
-			{
-				stream = this.eventStore.OpenStream(bucketId, sagaId, 0, int.MaxValue);
-			}
-			catch (StreamNotFoundException)
-			{
-				stream = this.eventStore.CreateStream(sagaId);
-			}
+            if (this.streams.TryGetValue(streamsId, out stream))
+            { return stream; }
 
-			return this.streams[streamsId] = stream;
-		}
+            try
+            {
+                stream = this.eventStore.OpenStream(bucketId, sagaId, 0, int.MaxValue);
+            }
+            catch (StreamNotFoundException)
+            {
+                stream = this.eventStore.CreateStream(sagaId);
+            }
 
-		private static TSaga BuildSaga<TSaga>(IEventStream stream) where TSaga : class, ISaga, new()
-		{
-			var saga = new TSaga();
-			foreach (var @event in stream.CommittedEvents.Select(x => x.Body))
-			{
-				saga.Transition(@event);
-			}
+            return this.streams[streamsId] = stream;
+        }
 
-			saga.ClearUncommittedEvents();
-			saga.ClearUndispatchedMessages();
+        private ISaga GetSaga<TSaga>() where TSaga : class, ISaga, new()
+        {
+            return this.factory.Build(typeof(TSaga));
+        }
 
-			return saga;
-		}
+        private static void ApplyEventsToSaga(IEventStream stream, ISaga saga)
+        {
+            foreach (var @event in stream.CommittedEvents.Select(x => x.Body))
+            {
+                saga.Transition(@event);
+            }
 
-		private static Dictionary<string, object> PrepareHeaders(
-			ISaga saga, Action<IDictionary<string, object>> updateHeaders)
-		{
-			var headers = new Dictionary<string, object>();
+            saga.ClearUncommittedEvents();
+            saga.ClearUndispatchedMessages();
+        }
 
-			headers[SagaTypeHeader] = saga.GetType().FullName;
-			if (updateHeaders != null)
-			{
-				updateHeaders(headers);
-			}
+        private static Dictionary<string, object> PrepareHeaders(
+            ISaga saga, Action<IDictionary<string, object>> updateHeaders)
+        {
+            var headers = new Dictionary<string, object>();
 
-			int i = 0;
-			foreach (var command in saga.GetUndispatchedMessages())
-			{
-				headers[UndispatchedMessageHeader + i++] = command;
-			}
+            headers[SagaTypeHeader] = saga.GetType().FullName;
+            if (updateHeaders != null)
+            {
+                updateHeaders(headers);
+            }
 
-			return headers;
-		}
+            int i = 0;
+            foreach (var command in saga.GetUndispatchedMessages())
+            {
+                headers[UndispatchedMessageHeader + i++] = command;
+            }
 
-		private IEventStream PrepareStream(string bucketId, ISaga saga, Dictionary<string, object> headers)
-		{
-			IEventStream stream;
-			string streamsId = bucketId + saga.Id;
+            return headers;
+        }
 
-			if (!this.streams.TryGetValue(streamsId, out stream))
-			{
-				this.streams[streamsId] = stream = this.eventStore.CreateStream(saga.Id);
-			}
+        private IEventStream PrepareStream(string bucketId, ISaga saga, Dictionary<string, object> headers)
+        {
+            IEventStream stream;
+            string streamsId = bucketId + saga.Id;
 
-			foreach (var item in headers)
-			{
-				stream.UncommittedHeaders[item.Key] = item.Value;
-			}
+            if (!this.streams.TryGetValue(streamsId, out stream))
+            {
+                this.streams[streamsId] = stream = this.eventStore.CreateStream(saga.Id);
+            }
 
-			saga.GetUncommittedEvents().Cast<object>().Select(x => new EventMessage { Body = x }).ToList().ForEach(stream.Add);
+            foreach (var item in headers)
+            {
+                stream.UncommittedHeaders[item.Key] = item.Value;
+            }
 
-			return stream;
-		}
+            saga.GetUncommittedEvents().Cast<object>().Select(x => new EventMessage { Body = x }).ToList().ForEach(stream.Add);
 
-		private static void Persist(IEventStream stream, Guid commitId)
-		{
-			try
-			{
-				stream.CommitChanges(commitId);
-			}
-			catch (DuplicateCommitException)
-			{
-				stream.ClearChanges();
-			}
-			catch (StorageException e)
-			{
-				throw new PersistenceException(e.Message, e);
-			}
-		}
-	}
+            return stream;
+        }
+
+        private static void Persist(IEventStream stream, Guid commitId)
+        {
+            try
+            {
+                stream.CommitChanges(commitId);
+            }
+            catch (DuplicateCommitException)
+            {
+                stream.ClearChanges();
+            }
+            catch (StorageException e)
+            {
+                throw new PersistenceException(e.Message, e);
+            }
+        }
+    }
 }

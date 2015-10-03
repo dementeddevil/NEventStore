@@ -22,8 +22,8 @@ namespace AlphaTester
 				{ repoType = eRepositoryType.Sql; }
 			}
 
-			var eventsPerAggregate = 7;
-			var aggregatesToMake = 8;
+			var eventsPerAggregate = 10;
+			var aggregatesToMake = 5;
 			if (args.Length > 1)
 			{ aggregatesToMake = Convert.ToInt32(args[1]); }
 
@@ -74,7 +74,19 @@ namespace AlphaTester
 
 				});
 
-				history.Add(new Tuple<Guid, ConcurrentBag<int>>(aggregateId, values));
+                SnapshotAggregate(repoType, aggy.Id);
+
+                // now add some more stuff... this will be used to verify our snapshot is working as expected
+                Parallel.For(0, eventsPerAggregate, options, (j) =>
+                {
+                    try
+                    { values.Add(RetryWhileConcurrent(repoType, aggy.Id, j)); }
+                    catch (Exception ex)
+                    { _log.Error("error iteration {0}-{1}, {2}", i, j, ex.ToString()); }
+
+                });
+                
+                history.Add(new Tuple<Guid, ConcurrentBag<int>>(aggregateId, values));
 				_log.Trace(string.Format("Iteration [{0}] took me [{1}] ms", i, sw.ElapsedMilliseconds));
 			});
 
@@ -88,10 +100,19 @@ namespace AlphaTester
 			_log.Info("Took [{0}] to source all aggregates", totalTime);
 		}
 
+        private static void SnapshotAggregate(eRepositoryType repoType, Guid aggyId)
+        {
+            var sw = Stopwatch.StartNew();
+            var repo = new TestRepository(repoType);
+            var aggy = repo.GetSimpleAggregateById(aggyId, Int32.MaxValue);
+            repo.Snapshot(aggy);
+            _log.Info("Snapshot took [{0}] ms", sw.ElapsedMilliseconds);
+        }
+
 		private static int RetryWhileConcurrent(eRepositoryType repoType, Guid aggyId, int value)
 		{
-			var rand = new Random();
-			int testValue = rand.Next(513, (int)(1024 * 1024 * .3 + 8));
+			var rand = new Random(Guid.NewGuid().GetHashCode());
+            int testValue = rand.Next(513, (int)(1024 * 1024 * .3 + 8));
 
 			while (true)
 			{
@@ -102,7 +123,7 @@ namespace AlphaTester
 
 					_log.Trace("Getting Aggregate [{0}]", aggyId);
 					var repo = new TestRepository(repoType);
-					var aggy = repo.GetSimpleAggregateById(aggyId, 0);
+					var aggy = repo.GetSimpleAggregateById(aggyId, Int32.MaxValue);
 
 					aggy.ChangeFoo(testValue);
 
@@ -130,7 +151,7 @@ namespace AlphaTester
 		private static void CheckAggregate(TestRepository repository, Guid aggregateId, IEnumerable<int> valuesItShouldHave)
 		{
 			var isGood = true;
-			var aggy = repository.GetSimpleAggregateById(aggregateId, 0);
+			var aggy = repository.GetSimpleAggregateById(aggregateId, Int32.MaxValue);
 			foreach (var valueItShouldHave in valuesItShouldHave)
 			{
 				if (!aggy.FooHolder.Contains(valueItShouldHave))

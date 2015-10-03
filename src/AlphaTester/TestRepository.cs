@@ -63,10 +63,17 @@ namespace AlphaTester
 			_repository.Save( aggregate, commitId, updateHeaders );
 		}
 
-		/// <summary>
-		/// 
-		/// </summary>
-		protected override void LazyInit( ref IStoreEvents storeEventsInstance, object lockObject )
+
+        public void Snapshot(SimpleAggregate aggregate)
+        {
+            var memento = aggregate.prepareMemento();
+            _storeEvents.Advanced.AddSnapshot(new Snapshot(aggregate.Id.ToString(), memento.Version, memento));
+        }
+
+        /// <summary>
+        /// 
+        /// </summary>
+        protected override void LazyInit( ref IStoreEvents storeEventsInstance, object lockObject )
 		{
 			base.LazyInit( ref storeEventsInstance, lockObject );
 

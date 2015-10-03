@@ -21,6 +21,12 @@ namespace AlphaTester
 		/// <param name="snapshot">snapshot to load from</param>
 		/// <returns></returns>
 		public IAggregate Build( Type type, Guid id, IMemento snapshot )
-		{ return Activator.CreateInstance( type ) as IAggregate; }
+		{
+            var instance = Activator.CreateInstance( type ) as IAggregate;
+
+            var aggregate = instance as SimpleAggregate;
+            aggregate.ApplySnapshot(snapshot);
+            return aggregate;
+        }
 	}
 }

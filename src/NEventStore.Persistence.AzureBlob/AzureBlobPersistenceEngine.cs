@@ -455,10 +455,11 @@ namespace NEventStore.Persistence.AzureBlob
             blobCommit.Headers = attempt.Headers;
             blobCommit.StreamId = attempt.StreamId;
             blobCommit.StreamRevision = attempt.StreamRevision;
+            blobCommit.Checkpoint = GetNextCheckpoint();
             var serializedBlobCommit = _serializer.Serialize(blobCommit);
 
             header.AppendPageBlobCommitDefinition(new PageBlobCommitDefinition(serializedBlobCommit.Length, attempt.CommitId, attempt.StreamRevision,
-                attempt.CommitStamp, header.PageBlobCommitDefinitions.Count, startPage, GetNextCheckpoint()));
+                attempt.CommitStamp, header.PageBlobCommitDefinitions.Count, startPage, blobCommit.Checkpoint));
             ++header.UndispatchedCommitCount;
             header.LastCommitSequence = attempt.CommitSequence;
 
@@ -568,15 +569,9 @@ namespace NEventStore.Persistence.AzureBlob
         /// <returns>The populated Commit.</returns>
         private ICommit CreateCommitFromAzureBlobCommit(AzureBlobCommit blobEntry)
         {
-            return new Commit(blobEntry.BucketId,
-                                blobEntry.StreamId,
-                                blobEntry.StreamRevision,
-                                blobEntry.CommitId,
-                                blobEntry.CommitSequence,
-                                blobEntry.CommitStampUtc,
-                                blobEntry.Checkpoint.ToString(),
-                                blobEntry.Headers,
-                                blobEntry.Events);
+            return new Commit(blobEntry.BucketId, blobEntry.StreamId, blobEntry.StreamRevision, blobEntry.CommitId,
+                                blobEntry.CommitSequence, blobEntry.CommitStampUtc, blobEntry.Checkpoint.ToString(),
+                                blobEntry.Headers, blobEntry.Events);
         }
 
         /// <summary>

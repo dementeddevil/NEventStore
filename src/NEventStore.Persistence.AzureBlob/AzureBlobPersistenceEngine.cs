@@ -7,6 +7,7 @@ using System.Security.Cryptography;
 using System.Threading;
 using Microsoft.WindowsAzure.Storage;
 using Microsoft.WindowsAzure.Storage.Blob;
+using Microsoft.WindowsAzure.Storage.Table;
 using NEventStore.Logging;
 using NEventStore.Serialization;
 
@@ -40,6 +41,7 @@ namespace NEventStore.Persistence.AzureBlob
         private readonly ISerialize _serializer;
         private readonly AzureBlobPersistenceOptions _options;
         private readonly CloudBlobClient _blobClient;
+        private readonly CloudTableClient _checkpointTableClient;
         private readonly CloudBlobContainer _primaryContainer;
         private readonly string _connectionString;
         private int _initialized;
@@ -66,6 +68,7 @@ namespace NEventStore.Persistence.AzureBlob
             _connectionString = connectionString;
             var storageAccount = CloudStorageAccount.Parse(connectionString);
             _blobClient = storageAccount.CreateCloudBlobClient();
+            _checkpointTableClient = storageAccount.CreateCloudTableClient();
             _primaryContainer = _blobClient.GetContainerReference(GetContainerName());
         }
 
@@ -251,87 +254,85 @@ namespace NEventStore.Persistence.AzureBlob
         /// <returns>A list of all undispatched commits.</returns>
         public IEnumerable<ICommit> GetUndispatchedCommits()
         {
-            // this is most likely extremely inefficient as the size of our store grows to 100's of millions of streams (possibly even just 1000's)
-            var containers = _blobClient.ListContainers();
+            Logger.Info("Getting undispatched commits.  This is only done during initialization.  This may take a while...");
             var allCommitDefinitions = new List<Tuple<WrappedPageBlob, PageBlobCommitDefinition>>();
 
-            foreach (var container in containers)
+            // this container is fetched lazily.  so actually filtering down at this level will improve our performance,
+            // assuming the options dictate a date range that filters down our set.
+            var pageBlobs = WrappedPageBlob.GetAllMatchinPrefix(_primaryContainer, null);
+            Logger.Info("Checking [{0}] blobs for undispatched commits... this may take a while", pageBlobs.Count());
+
+            // this could be a tremendous amount of data.  Depending on system used
+            // this may not be performant enough and may require some sort of index be built.
+            foreach (var pageBlob in pageBlobs)
             {
-                DateTime sinceDateUtc = DateTime.MinValue;
-                try
+                if (pageBlob.Metadata.ContainsKey(_isEventStreamAggregateKey))
                 {
-                    // only need to subtract if something different than TimeSpan.MaxValue is specified
-                    if (!_options.MaxTimeSpanForUndispatched.Equals(TimeSpan.MaxValue))
-                    { sinceDateUtc = DateTime.UtcNow.Subtract(_options.MaxTimeSpanForUndispatched); }
-                }
-                catch (ArgumentOutOfRangeException)
-                { Logger.Info("Date Time was out of range.  falling back to the smallest date/time possible"); }
+                    // we only care about guys who may be dirty
+                    bool isDirty = false;
+                    string isDirtyString;
+                    if (pageBlob.Metadata.TryGetValue(_hasUndispatchedCommitsKey, out isDirtyString))
+                    { isDirty = Boolean.Parse(isDirtyString); }
 
-                // this container is fetched lazily.  so actually filtering down at this level will improve our performance,
-                // assuming the options dictate a date range that filters down our set.
-                var pageBlobs = WrappedPageBlob.GetAllMatchinPrefix(container, null);
-                pageBlobs = pageBlobs.OrderByDescending((x) => x.Properties.LastModified).Where((x) => x.Properties.LastModified > sinceDateUtc);
-
-                // this could be a tremendous amount of data.  Depending on system used
-                // this may not be performant enough and may require some sort of index be built.
-                foreach (var pageBlob in pageBlobs)
-                {
-                    if (pageBlob.Metadata.ContainsKey(_isEventStreamAggregateKey))
+                    if (isDirty)
                     {
-                        // we only care about guys who may be dirty
-                        bool isDirty = true;
-                        string isDirtyString;
-                        if (pageBlob.Metadata.TryGetValue(_hasUndispatchedCommitsKey, out isDirtyString))
-                        { isDirty = Boolean.Parse(isDirtyString); }
+                        Logger.Info("undispatched commit possibly found with aggregate [{0}]", pageBlob.Name);
 
-                        if (isDirty)
+                        // Because fetching the header for a specific blob is a two phase operation it may take a couple tries if we are working with the
+                        // blob.  This is just a quality of life improvement for the user of the store so loading of the store does not hit frequent optimistic
+                        // concurrency hits that cause the store to have to re-initialize.
+                        var maxTries = 0;
+                        while (true)
                         {
-                            // Because fetching the header for a specific blob is a two phase operation it may take a couple tries if we are working with the
-                            // blob.  This is just a quality of life improvement for the user of the store so loading of the store does not hit frequent optimistic
-                            // concurrency hits that cause the store to have to re-initialize.
-                            var maxTries = 0;
-                            while (true)
+                            try
                             {
-                                try
+                                HeaderDefinitionMetadata headerDefinitionMetadata = null;
+                                var header = GetHeaderWithRetry(pageBlob, out headerDefinitionMetadata);
+                                bool wasActuallyDirty = false;
+                                if (header.UndispatchedCommitCount > 0)
                                 {
-                                    HeaderDefinitionMetadata headerDefinitionMetadata = null;
-                                    var header = GetHeaderWithRetry(pageBlob, out headerDefinitionMetadata);
-                                    if (header.UndispatchedCommitCount > 0)
+                                    foreach (var definition in header.PageBlobCommitDefinitions)
                                     {
-                                        foreach (var definition in header.PageBlobCommitDefinitions)
+                                        if (!definition.IsDispatched)
                                         {
-                                            if (!definition.IsDispatched)
-                                            { allCommitDefinitions.Add(new Tuple<WrappedPageBlob, PageBlobCommitDefinition>(pageBlob, definition)); }
+                                            Logger.Warn("Found undispatched commit for stream [{0}] revision [{1}]", pageBlob.Name, definition.Revision);
+                                            wasActuallyDirty = true;
+                                            allCommitDefinitions.Add(new Tuple<WrappedPageBlob, PageBlobCommitDefinition>(pageBlob, definition));
                                         }
                                     }
-
-                                    break;
                                 }
-                                catch (ConcurrencyException)
+
+                                if (!wasActuallyDirty)
                                 {
-                                    if (maxTries++ > 20)
-                                    {
-                                        Logger.Error("Reached max tries for getting undispatched commits and keep receiving concurrency exception.  throwing out.");
-                                        throw;
-                                    }
-                                    else
-                                    { Logger.Info("Concurrency issue detected while processing undispatched commits.  going to retry to load container"); }
+                                    pageBlob.Metadata[_hasUndispatchedCommitsKey] = false.ToString();
+                                    pageBlob.SetMetadata();
                                 }
-                                catch (CryptographicException ex)
+
+                                break;
+                            }
+                            catch (ConcurrencyException)
+                            {
+                                if (maxTries++ > 20)
                                 {
-                                    Logger.Fatal("Received a CryptographicException while processing aggregate with id [{0}].  The header is possibly be corrupt.  Error is [{1}]",
-                                        pageBlob.Name, ex.ToString());
-
-                                    break;
+                                    Logger.Error("Reached max tries for getting undispatched commits and keep receiving concurrency exception.  throwing out.");
+                                    throw;
                                 }
-                                catch (InvalidHeaderDataException ex)
-                                {
-                                    Logger.Fatal("Received a InvalidHeaderDataException while processing aggregate with id [{0}].  The header is possibly be corrupt.  Error is [{1}]",
-                                        pageBlob.Name, ex.ToString());
+                                else
+                                { Logger.Info("Concurrency issue detected while processing undispatched commits.  going to retry to load container"); }
+                            }
+                            catch (CryptographicException ex)
+                            {
+                                Logger.Fatal("Received a CryptographicException while processing aggregate with id [{0}].  The header is possibly be corrupt.  Error is [{1}]",
+                                    pageBlob.Name, ex.ToString());
 
-                                    break;
+                                break;
+                            }
+                            catch (InvalidHeaderDataException ex)
+                            {
+                                Logger.Fatal("Received a InvalidHeaderDataException while processing aggregate with id [{0}].  The header is possibly be corrupt.  Error is [{1}]",
+                                    pageBlob.Name, ex.ToString());
 
-                                }
+                                break;
                             }
                         }
                     }
@@ -339,9 +340,27 @@ namespace NEventStore.Persistence.AzureBlob
             }
 
             // now sort the definitions so we can return out sorted
-            var orderedCommitDefinitions = allCommitDefinitions.OrderBy((x) => x.Item2.CommitStampUtc);
+            Logger.Info("Found [{0}] undispatched commits", allCommitDefinitions.Count);
+            var orderedCommitDefinitions = allCommitDefinitions.OrderBy((x) => x.Item2.Checkpoint);
             foreach (var orderedCommitDefinition in orderedCommitDefinitions)
             { yield return CreateCommitFromDefinition(orderedCommitDefinition.Item1, orderedCommitDefinition.Item2); }
+        }
+
+        private bool AddCheckpointTableEntry(ICommit commit, CloudTable table)
+        {
+            var added = false;
+
+            try
+            {
+                var entity = new CheckpointTableEntity(commit);
+                var insertOperation = TableOperation.InsertOrReplace(entity);
+                table.Execute(insertOperation);
+                added = true;
+            }
+            catch (Exception)
+            { } // this still needs rework.. going on vacation and want to let chris have a go and test.
+
+            return added;
         }
 
         /// <summary>
@@ -350,6 +369,16 @@ namespace NEventStore.Persistence.AzureBlob
         /// <param name="commit">The commit object to mark as dispatched.</param>
         public void MarkCommitAsDispatched(ICommit commit)
         {
+            Logger.Info("Marking commit stream [{0}] with revision [{1}] as committed", commit.StreamId, commit.StreamRevision);
+            var tableName = string.Format("chpt{0}{1}", GetContainerName(), commit.BucketId);
+            var table = _checkpointTableClient.GetTableReference(tableName);
+            if (!AddCheckpointTableEntry(commit, table))
+            {
+                table.CreateIfNotExists();
+                if (!AddCheckpointTableEntry(commit, table))
+                { throw new Exception("SADNESS"); }
+            }
+
             var pageBlob = WrappedPageBlob.GetAssumingExists(_primaryContainer, commit.BucketId + "/" + commit.StreamId);
             HeaderDefinitionMetadata headerDefinition = null;
             var header = GetHeaderWithRetry(pageBlob, out headerDefinition);

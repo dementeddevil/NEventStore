@@ -81,6 +81,7 @@
     <Compile Include="AzureBlobPersistenceWireup.cs" />
     <Compile Include="AzureBlobPersistenceWireupExtensions.cs" />
     <Compile Include="AzureBlobCommit.cs" />
+    <Compile Include="CheckpointTableEntity.cs" />
     <Compile Include="HeaderDefinitionMetadata.cs" />
     <Compile Include="InvalidHeaderDataException.cs" />
     <Compile Include="Messages.Designer.cs">

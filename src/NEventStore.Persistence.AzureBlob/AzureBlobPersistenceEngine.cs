@@ -266,17 +266,18 @@ namespace NEventStore.Persistence.AzureBlob
             // this may not be performant enough and may require some sort of index be built.
             foreach (var pageBlob in pageBlobs)
             {
-                if (pageBlob.Metadata.ContainsKey(_isEventStreamAggregateKey))
+                var temp = pageBlob;
+                if (temp.Metadata.ContainsKey(_isEventStreamAggregateKey))
                 {
                     // we only care about guys who may be dirty
                     bool isDirty = false;
                     string isDirtyString;
-                    if (pageBlob.Metadata.TryGetValue(_hasUndispatchedCommitsKey, out isDirtyString))
+                    if (temp.Metadata.TryGetValue(_hasUndispatchedCommitsKey, out isDirtyString))
                     { isDirty = Boolean.Parse(isDirtyString); }
 
                     if (isDirty)
                     {
-                        Logger.Info("undispatched commit possibly found with aggregate [{0}]", pageBlob.Name);
+                        Logger.Info("undispatched commit possibly found with aggregate [{0}]", temp.Name);
 
                         // Because fetching the header for a specific blob is a two phase operation it may take a couple tries if we are working with the
                         // blob.  This is just a quality of life improvement for the user of the store so loading of the store does not hit frequent optimistic
@@ -287,7 +288,7 @@ namespace NEventStore.Persistence.AzureBlob
                             try
                             {
                                 HeaderDefinitionMetadata headerDefinitionMetadata = null;
-                                var header = GetHeaderWithRetry(pageBlob, out headerDefinitionMetadata);
+                                var header = GetHeaderWithRetry(temp, out headerDefinitionMetadata);
                                 bool wasActuallyDirty = false;
                                 if (header.UndispatchedCommitCount > 0)
                                 {
@@ -295,17 +296,17 @@ namespace NEventStore.Persistence.AzureBlob
                                     {
                                         if (!definition.IsDispatched)
                                         {
-                                            Logger.Warn("Found undispatched commit for stream [{0}] revision [{1}]", pageBlob.Name, definition.Revision);
+                                            Logger.Warn("Found undispatched commit for stream [{0}] revision [{1}]", temp.Name, definition.Revision);
                                             wasActuallyDirty = true;
-                                            allCommitDefinitions.Add(new Tuple<WrappedPageBlob, PageBlobCommitDefinition>(pageBlob, definition));
+                                            allCommitDefinitions.Add(new Tuple<WrappedPageBlob, PageBlobCommitDefinition>(temp, definition));
                                         }
                                     }
                                 }
 
                                 if (!wasActuallyDirty)
                                 {
-                                    pageBlob.Metadata[_hasUndispatchedCommitsKey] = false.ToString();
-                                    pageBlob.SetMetadata();
+                                    temp.Metadata[_hasUndispatchedCommitsKey] = false.ToString();
+                                    temp.SetMetadata();
                                 }
 
                                 break;
@@ -318,7 +319,13 @@ namespace NEventStore.Persistence.AzureBlob
                                     throw;
                                 }
                                 else
-                                { Logger.Info("Concurrency issue detected while processing undispatched commits.  going to retry to load container"); }
+                                {
+                                    Logger.Info("Concurrency issue detected while processing undispatched commits.  going to retry to load container");
+                                    try
+                                    { temp = WrappedPageBlob.GetAllMatchinPrefix(_primaryContainer, pageBlob.Name).Single(); }
+                                    catch (Exception ex)
+                                    { Logger.Warn("Attempted to reload during concurrency and failed... will retry.  [{0}]", ex.Message); }
+                                }
                             }
                             catch (CryptographicException ex)
                             {

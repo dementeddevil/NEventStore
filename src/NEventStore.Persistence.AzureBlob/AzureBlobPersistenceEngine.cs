@@ -353,38 +353,13 @@ namespace NEventStore.Persistence.AzureBlob
             { yield return CreateCommitFromDefinition(orderedCommitDefinition.Item1, orderedCommitDefinition.Item2); }
         }
 
-        private bool AddCheckpointTableEntry(ICommit commit, CloudTable table)
-        {
-            var added = false;
-
-            try
-            {
-                var entity = new CheckpointTableEntity(commit);
-                var insertOperation = TableOperation.InsertOrReplace(entity);
-                table.Execute(insertOperation);
-                added = true;
-            }
-            catch (Exception)
-            { } // this still needs rework.. going on vacation and want to let chris have a go and test.
-
-            return added;
-        }
-
         /// <summary>
         /// Marks a stream Id's commit as dispatched.
         /// </summary>
         /// <param name="commit">The commit object to mark as dispatched.</param>
         public void MarkCommitAsDispatched(ICommit commit)
         {
-            Logger.Info("Marking commit stream [{0}] with revision [{1}] as committed", commit.StreamId, commit.StreamRevision);
-            var tableName = string.Format("chpt{0}{1}", GetContainerName(), commit.BucketId);
-            var table = _checkpointTableClient.GetTableReference(tableName);
-            if (!AddCheckpointTableEntry(commit, table))
-            {
-                table.CreateIfNotExists();
-                if (!AddCheckpointTableEntry(commit, table))
-                { throw new Exception("SADNESS"); }
-            }
+            AddCheckpointTableEntry(commit);
 
             var pageBlob = WrappedPageBlob.GetAssumingExists(_primaryContainer, commit.BucketId + "/" + commit.StreamId);
             HeaderDefinitionMetadata headerDefinition = null;
@@ -848,6 +823,38 @@ namespace NEventStore.Persistence.AzureBlob
             var checkpointBlob = WrappedPageBlob.CreateNewIfNotExists(blobContainer, _checkpointBlobName, 1);
             ((CloudPageBlob)checkpointBlob).SetSequenceNumber(SequenceNumberAction.Increment, null);
             return (ulong)((CloudPageBlob)checkpointBlob).Properties.PageBlobSequenceNumber.Value;
+        }
+
+        /// <summary>
+        /// Adds a checkpoint to our table storage account allowing for simple
+        /// commit replay at a later time.
+        /// </summary>
+        /// <param name="commit"></param>
+        private void AddCheckpointTableEntry(ICommit commit)
+        {
+            var tableName = string.Format("chpt{0}{1}", GetContainerName(), commit.BucketId);
+            var table = _checkpointTableClient.GetTableReference(tableName);
+
+            Action addCheckpointDelegate = () => {
+                var entity = new CheckpointTableEntity(commit);
+                var insertOperation = TableOperation.InsertOrReplace(entity);
+                table.Execute(insertOperation);
+            };
+
+            try
+            { addCheckpointDelegate(); }
+            catch (Microsoft.WindowsAzure.Storage.StorageException ex)
+            {
+                if (ex.InnerException != null && ex.InnerException is WebException &&
+                    ((WebException)(ex.InnerException)).Status == WebExceptionStatus.ProtocolError &&
+                    ((HttpWebResponse)(((WebException)(ex.InnerException)).Response)).StatusCode == HttpStatusCode.NotFound)
+                {
+                    table.CreateIfNotExists();
+                    addCheckpointDelegate();
+                }
+                else
+                { throw; }
+            }
         }
 
         #endregion

@@ -32,5 +32,15 @@ namespace NEventStore
             Container.Register<ISerialize>(new RijndaelSerializer(wrapped, encryptionKey));
             return this;
         }
+
+        public SerializationWireup EncryptWithAes256(byte[] encryptionKey)
+        {
+            Logger.Debug(Messages.ConfiguringEncryption);
+            var wrapped = Container.Resolve<ISerialize>();
+
+            Logger.Debug(Messages.WrappingSerializerEncryption, wrapped.GetType());
+            Container.Register<ISerialize>(new AES256Serializer(wrapped, encryptionKey));
+            return this;
+        }
     }
 }

@@ -212,6 +212,7 @@
     </Compile>
     <Compile Include="SerializationWireup.cs" />
     <Compile Include="SerializationWireupExtensions.cs" />
+    <Compile Include="Serialization\AES256Serializer.cs" />
     <Compile Include="Serialization\BinarySerializer.cs" />
     <Compile Include="Serialization\ByteStreamDocumentSerializer.cs" />
     <Compile Include="Serialization\DocumentObjectSerializer.cs" />

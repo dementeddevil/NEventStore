@@ -2,12 +2,13 @@ namespace NEventStore.Persistence
 {
     using System;
     using System.Collections.Generic;
-    using System.Linq;
+    using System.Threading;
+    using System.Threading.Tasks;
     using NEventStore.Logging;
 
     public class PipelineHooksAwarePersistanceDecorator : IPersistStreams
     {
-        private static readonly ILog Logger = LogFactory.BuildLogger(typeof (PipelineHooksAwarePersistanceDecorator));
+        private static readonly ILog Logger = LogFactory.BuildLogger(typeof(PipelineHooksAwarePersistanceDecorator));
         private readonly IPersistStreams _original;
         private readonly IEnumerable<IPipelineHook> _pipelineHooks;
 
@@ -15,11 +16,11 @@ namespace NEventStore.Persistence
         {
             if (original == null)
             {
-                throw new ArgumentNullException("original");
+                throw new ArgumentNullException(nameof(original));
             }
             if (pipelineHooks == null)
             {
-                throw new ArgumentNullException("pipelineHooks");
+                throw new ArgumentNullException(nameof(pipelineHooks));
             }
             _original = original;
             _pipelineHooks = pipelineHooks;
@@ -30,112 +31,140 @@ namespace NEventStore.Persistence
             _original.Dispose();
         }
 
-        public IEnumerable<ICommit> GetFrom(string bucketId, string streamId, int minRevision, int maxRevision)
+        public Task<IEnumerable<ICommit>> GetFromAsync(string bucketId, string streamId, int minRevision, int maxRevision, CancellationToken cancellationToken)
         {
-            return _original.GetFrom(bucketId, streamId, minRevision, maxRevision);
+            return _original.GetFromAsync(bucketId, streamId, minRevision, maxRevision, cancellationToken);
         }
 
-        public ICommit Commit(CommitAttempt attempt)
+        public Task<ICommit> CommitAsync(CommitAttempt attempt, CancellationToken cancellationToken)
         {
-            return _original.Commit(attempt);
+            return _original.CommitAsync(attempt, cancellationToken);
         }
 
-        public ISnapshot GetSnapshot(string bucketId, string streamId, int maxRevision)
+        public Task<ISnapshot> GetSnapshotAsync(string bucketId, string streamId, int maxRevision, CancellationToken cancellationToken)
         {
-            return _original.GetSnapshot(bucketId, streamId, maxRevision);
+            return _original.GetSnapshotAsync(bucketId, streamId, maxRevision, cancellationToken);
         }
 
-        public bool AddSnapshot(ISnapshot snapshot)
+        public Task<bool> AddSnapshotAsync(ISnapshot snapshot, CancellationToken cancellationToken)
         {
-            return _original.AddSnapshot(snapshot);
+            return _original.AddSnapshotAsync(snapshot, cancellationToken);
         }
 
-        public IEnumerable<IStreamHead> GetStreamsToSnapshot(string bucketId, int maxThreshold)
+        public Task<IEnumerable<IStreamHead>> GetStreamsToSnapshotAsync(string bucketId, int maxThreshold, CancellationToken cancellationToken)
         {
-            return _original.GetStreamsToSnapshot(bucketId, maxThreshold);
+            return _original.GetStreamsToSnapshotAsync(bucketId, maxThreshold, cancellationToken);
         }
 
-        public void Initialize()
+        public Task InitializeAsync(CancellationToken cancellationToken)
         {
-            _original.Initialize();
+            return _original.InitializeAsync(cancellationToken);
         }
 
-        public IEnumerable<ICommit> GetFrom(string bucketId, DateTime start)
+        public async Task<IEnumerable<ICommit>> GetFromAsync(string bucketId, DateTime start, CancellationToken cancellationToken)
         {
-            return ExecuteHooks(_original.GetFrom(bucketId, start));
+            return await ExecuteHooks(
+                await _original
+                    .GetFromAsync(bucketId, start, cancellationToken)
+                    .ConfigureAwait(false),
+                cancellationToken).ConfigureAwait(false);
         }
 
-        public IEnumerable<ICommit> GetFrom(string checkpointToken)
+        public async Task<IEnumerable<ICommit>> GetFromAsync(CancellationToken cancellationToken, string checkpointToken)
         {
-            return ExecuteHooks(_original.GetFrom(checkpointToken));
+            return await ExecuteHooks(
+                await _original
+                    .GetFromAsync(cancellationToken, checkpointToken)
+                    .ConfigureAwait(false),
+                cancellationToken).ConfigureAwait(false);
         }
 
-        public ICheckpoint GetCheckpoint(string checkpointToken)
+        public Task<ICheckpoint> GetCheckpointAsync(CancellationToken cancellationToken, string checkpointToken)
         {
-            return _original.GetCheckpoint(checkpointToken);
+            return _original.GetCheckpointAsync(cancellationToken, checkpointToken);
         }
 
-        public IEnumerable<ICommit> GetFromTo(string bucketId, DateTime start, DateTime end)
+        public async Task<IEnumerable<ICommit>> GetFromToAsync(string bucketId, DateTime start, DateTime end, CancellationToken cancellationToken)
         {
-            return ExecuteHooks(_original.GetFromTo(bucketId, start, end));
+            return await ExecuteHooks(
+                await _original
+                    .GetFromToAsync(bucketId, start, end, cancellationToken)
+                    .ConfigureAwait(false),
+                cancellationToken).ConfigureAwait(false);
         }
 
-        public IEnumerable<ICommit> GetUndispatchedCommits()
+        public async Task<IEnumerable<ICommit>> GetUndispatchedCommitsAsync(CancellationToken cancellationToken)
         {
-            return ExecuteHooks(_original.GetUndispatchedCommits());
+            return await ExecuteHooks(
+                await _original
+                    .GetUndispatchedCommitsAsync(cancellationToken)
+                    .ConfigureAwait(false),
+                cancellationToken).ConfigureAwait(false);
         }
 
-        public void MarkCommitAsDispatched(ICommit commit)
+        public Task MarkCommitAsDispatchedAsync(ICommit commit, CancellationToken cancellationToken)
         {
-            _original.MarkCommitAsDispatched(commit);
+            return _original.MarkCommitAsDispatchedAsync(commit, cancellationToken);
         }
 
-        public void Purge()
+        public async Task PurgeAsync(CancellationToken cancellationToken)
         {
-            _original.Purge();
+            await _original.PurgeAsync(cancellationToken).ConfigureAwait(false);
             foreach (var pipelineHook in _pipelineHooks)
             {
-                pipelineHook.OnPurge();
+                await pipelineHook
+                    .OnPurgeAsync(cancellationToken)
+                    .ConfigureAwait(false);
             }
         }
 
-        public void Purge(string bucketId)
+        public async Task PurgeAsync(string bucketId, CancellationToken cancellationToken)
         {
-            _original.Purge(bucketId);
+            await _original.PurgeAsync(bucketId, cancellationToken).ConfigureAwait(false);
             foreach (var pipelineHook in _pipelineHooks)
             {
-                pipelineHook.OnPurge(bucketId);
+                await pipelineHook.OnPurgeAsync(bucketId, cancellationToken).ConfigureAwait(false);
             }
         }
 
-        public void Drop()
+        public Task DropAsync(CancellationToken cancellationToken)
         {
-            _original.Drop();
+            return _original.DropAsync(cancellationToken);
         }
 
-        public void DeleteStream(string bucketId, string streamId)
+        public async Task DeleteStreamAsync(string bucketId, string streamId, CancellationToken cancellationToken)
         {
-            _original.DeleteStream(bucketId, streamId);
+            await _original
+                .DeleteStreamAsync(bucketId, streamId, cancellationToken)
+                .ConfigureAwait(false);
+
             foreach (var pipelineHook in _pipelineHooks)
             {
-                pipelineHook.OnDeleteStream(bucketId, streamId);
+                await pipelineHook
+                    .OnDeleteStreamAsync(bucketId, streamId, cancellationToken)
+                    .ConfigureAwait(false);
             }
         }
 
-        public bool IsDisposed
-        {
-            get { return _original.IsDisposed; }
-        }
+        public bool IsDisposed => _original.IsDisposed;
 
-        private IEnumerable<ICommit> ExecuteHooks(IEnumerable<ICommit> commits)
+        private async Task<IEnumerable<ICommit>> ExecuteHooks(IEnumerable<ICommit> commits, CancellationToken cancellationToken)
         {
+            var result = new List<ICommit>();
             foreach (var commit in commits)
             {
-                ICommit filtered = commit;
-                foreach (var hook in _pipelineHooks.Where(x => (filtered = x.Select(filtered)) == null))
+                var filtered = commit;
+                foreach (var hook in _pipelineHooks)
                 {
-                    Logger.Info(Resources.PipelineHookSkippedCommit, hook.GetType(), commit.CommitId);
-                    break;
+                    filtered = await hook
+                        .SelectAsync(filtered, cancellationToken)
+                        .ConfigureAwait(false);
+
+                    if (filtered == null)
+                    {
+                        Logger.Info(Resources.PipelineHookSkippedCommit, hook.GetType(), commit.CommitId);
+                        break;
+                    }
                 }
 
                 if (filtered == null)
@@ -144,9 +173,11 @@ namespace NEventStore.Persistence
                 }
                 else
                 {
-                    yield return filtered;
+                    result.Add(filtered);
                 }
             }
+
+            return result;
         }
     }
 }

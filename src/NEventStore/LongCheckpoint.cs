@@ -12,9 +12,9 @@ namespace NEventStore
             _value = value;
         }
 
-        public string Value { get { return _value.ToString(CultureInfo.InvariantCulture); }}
+        public string Value => _value.ToString(CultureInfo.InvariantCulture);
 
-        public long LongValue { get { return _value; } }
+        public long LongValue => _value;
 
         public int CompareTo(ICheckpoint other)
         {

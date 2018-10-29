@@ -2,6 +2,8 @@ namespace NEventStore
 {
     using System;
     using System.Collections.Generic;
+    using System.Threading;
+    using System.Threading.Tasks;
     using NEventStore.Persistence;
 
     /// <summary>
@@ -57,11 +59,12 @@ namespace NEventStore
         ///     Commits the changes to durable storage.
         /// </summary>
         /// <param name="commitId">The value which uniquely identifies the commit.</param>
+        /// <param name="cancellationToken">The cancellation token.</param>
         /// <exception cref="DuplicateCommitException" />
         /// <exception cref="ConcurrencyException" />
         /// <exception cref="StorageException" />
         /// <exception cref="StorageUnavailableException" />
-        void CommitChanges(Guid commitId);
+        Task CommitChangesAsync(Guid commitId, CancellationToken cancellationToken);
 
         /// <summary>
         ///     Clears the uncommitted changes.

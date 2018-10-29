@@ -27,11 +27,8 @@ namespace CommonDomain.Core
 
 		protected IRouteEvents RegisteredRoutes
 		{
-			get
-			{
-				return this.registeredRoutes ?? (this.registeredRoutes = new ConventionEventRouter(true, this));
-			}
-			set
+			get => this.registeredRoutes ?? (this.registeredRoutes = new ConventionEventRouter(true, this));
+		    set
 			{
 				if (value == null)
 				{
@@ -64,7 +61,7 @@ namespace CommonDomain.Core
 
 		IMemento IAggregate.GetSnapshot()
 		{
-			IMemento snapshot = this.GetSnapshot();
+			var snapshot = this.GetSnapshot();
 			snapshot.Id = this.Id;
 			snapshot.Version = this.Version;
 			return snapshot;

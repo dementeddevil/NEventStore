@@ -1,14 +1,18 @@
 namespace NEventStore
 {
+    using System.Threading;
+    using System.Threading.Tasks;
+
     public static class PipelineHookExtensions
     {
         /// <summary>
-        ///     Invoked when all buckets have been purged.
+        /// Invoked when all buckets have been purged.
         /// </summary>
-        /// <param name="pipelineHook">The pipleine hook.</param>
-        public static void OnPurge(this IPipelineHook pipelineHook)
+        /// <param name="pipelineHook">The pipeline hook.</param>
+        /// <param name="cancellationToken">The cancallation token.</param>
+        public static Task OnPurgeAsync(this IPipelineHook pipelineHook, CancellationToken cancellationToken)
         {
-            pipelineHook.OnPurge(null);
+            return pipelineHook.OnPurgeAsync(null, cancellationToken);
         }
     }
 }

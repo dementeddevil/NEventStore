@@ -29,7 +29,7 @@ namespace NEventStore
         {
             unchecked
             {
-                int hashCode = (obj.BucketId != null ? obj.BucketId.GetHashCode() : 0);
+                var hashCode = (obj.BucketId != null ? obj.BucketId.GetHashCode() : 0);
                 hashCode = (hashCode * 397) ^ (obj.StreamId != null ? obj.StreamId.GetHashCode() : 0);
                 hashCode = (hashCode * 397) ^ obj.CommitId.GetHashCode();
                 return hashCode;

@@ -1,11 +1,11 @@
+using System;
+using System.Data;
+using System.Data.Common;
+using System.Diagnostics;
+using NEventStore.Persistence.Sql;
+
 namespace NEventStore.Persistence.AcceptanceTests
 {
-    using System;
-    using System.Data;
-    using System.Data.Common;
-    using System.Diagnostics;
-    using NEventStore.Persistence.Sql;
-
     public class EnviromentConnectionFactory : IConnectionFactory
     {
         private readonly string _envVarKey;

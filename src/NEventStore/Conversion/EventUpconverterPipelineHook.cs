@@ -3,6 +3,8 @@ namespace NEventStore.Conversion
     using System;
     using System.Collections.Generic;
     using System.Linq;
+    using System.Threading;
+    using System.Threading.Tasks;
     using NEventStore.Logging;
     using NEventStore.Persistence;
 
@@ -15,7 +17,7 @@ namespace NEventStore.Conversion
         {
             if (converters == null)
             {
-                throw new ArgumentNullException("converters");
+                throw new ArgumentNullException(nameof(converters));
             }
 
             _converters = converters;
@@ -27,14 +29,14 @@ namespace NEventStore.Conversion
             GC.SuppressFinalize(this);
         }
 
-        public override ICommit Select(ICommit committed)
+        public override Task<ICommit> SelectAsync(ICommit committed, CancellationToken cancellationToken)
         {
-            bool converted = false;
+            var converted = false;
             var eventMessages = committed
                 .Events
                 .Select(eventMessage =>
                 {
-                    object convert = Convert(eventMessage.Body);
+                    var convert = Convert(eventMessage.Body);
                     if (ReferenceEquals(convert, eventMessage.Body))
                     {
                         return eventMessage;
@@ -45,17 +47,19 @@ namespace NEventStore.Conversion
                 .ToList();
             if (!converted)
             {
-                return committed;
+                return Task.FromResult(committed);
             }
-            return new Commit(committed.BucketId,
-                committed.StreamId,
-                committed.StreamRevision,
-                committed.CommitId,
-                committed.CommitSequence,
-                committed.CommitStamp,
-                committed.CheckpointToken,
-                committed.Headers,
-                eventMessages);
+            return Task.FromResult<ICommit>(
+                new Commit(
+                    committed.BucketId,
+                    committed.StreamId,
+                    committed.StreamRevision,
+                    committed.CommitId,
+                    committed.CommitSequence,
+                    committed.CommitStamp,
+                    committed.CheckpointToken,
+                    committed.Headers,
+                    eventMessages));
         }
 
         protected virtual void Dispose(bool disposing)
@@ -65,13 +69,12 @@ namespace NEventStore.Conversion
 
         private object Convert(object source)
         {
-            Func<object, object> converter;
-            if (!_converters.TryGetValue(source.GetType(), out converter))
+            if (!_converters.TryGetValue(source.GetType(), out var converter))
             {
                 return source;
             }
 
-            object target = converter(source);
+            var target = converter(source);
             Logger.Debug(Resources.ConvertingEvent, source.GetType(), target.GetType());
 
             return Convert(target);

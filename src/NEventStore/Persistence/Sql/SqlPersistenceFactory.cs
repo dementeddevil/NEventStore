@@ -34,7 +34,7 @@ namespace NEventStore.Persistence.Sql
         {
             if (dialect == null)
             {
-                throw new ArgumentNullException("dialect");
+                throw new ArgumentNullException(nameof(dialect));
             }
 
             _connectionFactory = factory;
@@ -49,25 +49,13 @@ namespace NEventStore.Persistence.Sql
             PageSize = pageSize;
         }
 
-        protected virtual IConnectionFactory ConnectionFactory
-        {
-            get { return _connectionFactory; }
-        }
+        protected virtual IConnectionFactory ConnectionFactory => _connectionFactory;
 
-        protected virtual ISqlDialect Dialect
-        {
-            get { return _dialect; }
-        }
+        protected virtual ISqlDialect Dialect => _dialect;
 
-        protected virtual ISerialize Serializer
-        {
-            get { return _serializer; }
-        }
+        protected virtual ISerialize Serializer => _serializer;
 
-        protected virtual IStreamIdHasher StreamIdHasher
-        {
-            get { return _streamIdHasher; }
-        }
+        protected virtual IStreamIdHasher StreamIdHasher => _streamIdHasher;
 
         protected int PageSize { get; set; }
 
@@ -78,7 +66,7 @@ namespace NEventStore.Persistence.Sql
 
         protected static ISqlDialect ResolveDialect(ConnectionStringSettings settings)
         {
-            string providerName = settings.ProviderName.ToUpperInvariant();
+            var providerName = settings.ProviderName.ToUpperInvariant();
 
             if (providerName.Contains("MYSQL"))
             {

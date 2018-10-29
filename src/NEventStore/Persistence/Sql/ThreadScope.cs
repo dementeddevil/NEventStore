@@ -18,7 +18,7 @@ namespace NEventStore.Persistence.Sql
         {
             _threadKey = typeof (ThreadScope<T>).Name + ":[{0}]".FormatWith(key ?? string.Empty);
 
-            T parent = Load();
+            var parent = Load();
             _rootScope = parent == null;
             _logger.Debug(Messages.OpeningThreadScope, _threadKey, _rootScope);
 
@@ -26,7 +26,7 @@ namespace NEventStore.Persistence.Sql
 
             if (_current == null)
             {
-                throw new ArgumentException(Messages.BadFactoryResult, "factory");
+                throw new ArgumentException(Messages.BadFactoryResult, nameof(factory));
             }
 
             if (_rootScope)
@@ -35,10 +35,7 @@ namespace NEventStore.Persistence.Sql
             }
         }
 
-        public T Current
-        {
-            get { return _current; }
-        }
+        public T Current => _current;
 
         public void Dispose()
         {

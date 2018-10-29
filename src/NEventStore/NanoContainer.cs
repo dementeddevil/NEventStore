@@ -24,12 +24,12 @@ namespace NEventStore
         {
             if (Equals(instance, null))
             {
-                throw new ArgumentNullException("instance", Messages.InstanceCannotBeNull);
+                throw new ArgumentNullException(nameof(instance), Messages.InstanceCannotBeNull);
             }
 
             if (!typeof (TService).IsValueType && !typeof (TService).IsInterface)
             {
-                throw new ArgumentException(Messages.TypeMustBeInterface, "instance");
+                throw new ArgumentException(Messages.TypeMustBeInterface, nameof(instance));
             }
 
             Logger.Debug(Messages.RegisteringServiceInstance, typeof (TService));

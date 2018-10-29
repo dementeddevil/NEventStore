@@ -10,7 +10,7 @@ namespace NEventStore.Persistence.Sql
         {
             if (getHash == null)
             {
-                throw new ArgumentNullException("getHash");
+                throw new ArgumentNullException(nameof(getHash));
             }
             _getHash = getHash;
         }

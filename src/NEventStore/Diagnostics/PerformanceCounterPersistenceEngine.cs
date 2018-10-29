@@ -1,10 +1,12 @@
+using System;
+using System.Collections.Generic;
+using System.Diagnostics;
+using System.Threading;
+using System.Threading.Tasks;
+using NEventStore.Persistence;
+
 namespace NEventStore.Diagnostics
 {
-    using System;
-    using System.Collections.Generic;
-    using System.Diagnostics;
-    using NEventStore.Persistence;
-
     public class PerformanceCounterPersistenceEngine : IPersistStreams
     {
         private readonly PerformanceCounters _counters;
@@ -16,23 +18,31 @@ namespace NEventStore.Diagnostics
             _counters = new PerformanceCounters(instanceName);
         }
 
-        public void Initialize()
+        public Task InitializeAsync(CancellationToken cancellationToken)
         {
-            _persistence.Initialize();
+            return _persistence.InitializeAsync(cancellationToken);
         }
 
-        public ICommit Commit(CommitAttempt attempt)
+        public async Task<ICommit> CommitAsync(CommitAttempt attempt, CancellationToken cancellationToken)
         {
-            Stopwatch clock = Stopwatch.StartNew();
-            ICommit commit = _persistence.Commit(attempt);
+            var clock = Stopwatch.StartNew();
+
+            var commit = await _persistence
+                .CommitAsync(attempt, cancellationToken)
+                .ConfigureAwait(false);
+
             clock.Stop();
             _counters.CountCommit(attempt.Events.Count, clock.ElapsedMilliseconds);
+
             return commit;
         }
 
-        public void MarkCommitAsDispatched(ICommit commit)
+        public async Task MarkCommitAsDispatchedAsync(ICommit commit, CancellationToken cancellationToken)
         {
-            _persistence.MarkCommitAsDispatched(commit);
+            await _persistence
+                .MarkCommitAsDispatchedAsync(commit, cancellationToken)
+                .ConfigureAwait(false);
+
             _counters.CountCommitDispatched();
         }
 
@@ -41,39 +51,41 @@ namespace NEventStore.Diagnostics
             return LongCheckpoint.Parse(checkpointValue);
         }
 
-        public ICheckpoint GetCheckpoint(string checkpointToken = null)
+        public Task<ICheckpoint> GetCheckpointAsync(CancellationToken cancellationToken, string checkpointToken = null)
         {
-            return _persistence.GetCheckpoint(checkpointToken);
+            return _persistence.GetCheckpointAsync(cancellationToken, checkpointToken);
         }
 
-        public IEnumerable<ICommit> GetFromTo(string bucketId, DateTime start, DateTime end)
+        public Task<IEnumerable<ICommit>> GetFromToAsync(string bucketId, DateTime start, DateTime end, CancellationToken cancellationToken)
         {
-            return _persistence.GetFromTo(bucketId, start, end);
+            return _persistence.GetFromToAsync(bucketId, start, end, cancellationToken);
         }
 
-        public IEnumerable<ICommit> GetUndispatchedCommits()
+        public Task<IEnumerable<ICommit>> GetUndispatchedCommitsAsync(CancellationToken cancellationToken)
         {
-            return _persistence.GetUndispatchedCommits();
+            return _persistence.GetUndispatchedCommitsAsync(cancellationToken);
         }
 
-        public IEnumerable<ICommit> GetFrom(string bucketId, string streamId, int minRevision, int maxRevision)
+        public Task<IEnumerable<ICommit>> GetFromAsync(string bucketId, string streamId, int minRevision, int maxRevision, CancellationToken cancellationToken)
         {
-            return _persistence.GetFrom(bucketId, streamId, minRevision, maxRevision);
+            return _persistence.GetFromAsync(bucketId, streamId, minRevision, maxRevision, cancellationToken);
         }
 
-        public IEnumerable<ICommit> GetFrom(string bucketId, DateTime start)
+        public Task<IEnumerable<ICommit>> GetFromAsync(string bucketId, DateTime start, CancellationToken cancellationToken)
         {
-            return _persistence.GetFrom(bucketId, start);
+            return _persistence.GetFromAsync(bucketId, start, cancellationToken);
         }
 
-        public IEnumerable<ICommit> GetFrom(string checkpointToken)
+        public Task<IEnumerable<ICommit>> GetFromAsync(CancellationToken cancellationToken, string checkpointToken)
         {
-            return _persistence.GetFrom(checkpointToken);
+            return _persistence.GetFromAsync(cancellationToken, checkpointToken);
         }
 
-        public bool AddSnapshot(ISnapshot snapshot)
+        public async Task<bool> AddSnapshotAsync(ISnapshot snapshot, CancellationToken cancellationToken)
         {
-            bool result = _persistence.AddSnapshot(snapshot);
+            var result = await _persistence
+                .AddSnapshotAsync(snapshot, cancellationToken)
+                .ConfigureAwait(false);
             if (result)
             {
                 _counters.CountSnapshot();
@@ -82,40 +94,37 @@ namespace NEventStore.Diagnostics
             return result;
         }
 
-        public ISnapshot GetSnapshot(string bucketId, string streamId, int maxRevision)
+        public Task<ISnapshot> GetSnapshotAsync(string bucketId, string streamId, int maxRevision, CancellationToken cancellationToken)
         {
-            return _persistence.GetSnapshot(bucketId, streamId, maxRevision);
+            return _persistence.GetSnapshotAsync(bucketId, streamId, maxRevision, cancellationToken);
         }
 
-        public virtual IEnumerable<IStreamHead> GetStreamsToSnapshot(string bucketId, int maxThreshold)
+        public virtual Task<IEnumerable<IStreamHead>> GetStreamsToSnapshotAsync(string bucketId, int maxThreshold, CancellationToken cancellationToken)
         {
-            return _persistence.GetStreamsToSnapshot(bucketId, maxThreshold);
+            return _persistence.GetStreamsToSnapshotAsync(bucketId, maxThreshold, cancellationToken);
         }
 
-        public virtual void Purge()
+        public virtual Task PurgeAsync(CancellationToken cancellationToken)
         {
-            _persistence.Purge();
+            return _persistence.PurgeAsync(cancellationToken);
         }
 
-        public void Purge(string bucketId)
+        public Task PurgeAsync(string bucketId, CancellationToken cancellationToken)
         {
-            _persistence.Purge(bucketId);
+            return _persistence.PurgeAsync(bucketId, cancellationToken);
         }
 
-        public void Drop()
+        public Task DropAsync(CancellationToken cancellationToken)
         {
-            _persistence.Drop();
+            return _persistence.DropAsync(cancellationToken);
         }
 
-        public void DeleteStream(string bucketId, string streamId)
+        public Task DeleteStreamAsync(string bucketId, string streamId, CancellationToken cancellationToken)
         {
-            _persistence.DeleteStream(bucketId, streamId);
+            return _persistence.DeleteStreamAsync(bucketId, streamId, cancellationToken);
         }
 
-        public bool IsDisposed
-        {
-            get { return _persistence.IsDisposed; }
-        }
+        public bool IsDisposed => _persistence.IsDisposed;
 
         public void Dispose()
         {

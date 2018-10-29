@@ -29,7 +29,7 @@ namespace NEventStore
                     _assembliesToScan.AddRange(GetAllAssemblies());
                 }
 
-                IDictionary<Type, Func<object, object>> converters = GetConverters(_assembliesToScan);
+                var converters = GetConverters(_assembliesToScan);
                 return new EventUpconverterPipelineHook(converters);
             });
         }
@@ -44,7 +44,7 @@ namespace NEventStore
 
         private static IDictionary<Type, Func<object, object>> GetConverters(IEnumerable<Assembly> toScan)
         {
-            IEnumerable<KeyValuePair<Type, Func<object, object>>> c = from a in toScan
+            var c = from a in toScan
                                                                       from t in a.GetTypes()
                                                                       where !t.IsAbstract
                                                                       let i = t.GetInterface(typeof (IUpconvertEvents<,>).FullName)
@@ -73,7 +73,7 @@ namespace NEventStore
 
         public virtual EventUpconverterWireup WithConvertersFromAssemblyContaining(params Type[] converters)
         {
-            IEnumerable<Assembly> assemblies = converters.Select(c => c.Assembly).Distinct();
+            var assemblies = converters.Select(c => c.Assembly).Distinct();
             Logger.Debug(Messages.EventUpconvertersLoadedFrom, string.Concat(", ", assemblies));
             _assembliesToScan.AddRange(assemblies);
             return this;
@@ -86,7 +86,7 @@ namespace NEventStore
         {
             if (converter == null)
             {
-                throw new ArgumentNullException("converter");
+                throw new ArgumentNullException(nameof(converter));
             }
 
             _registered[typeof (TSource)] = @event => converter.Convert(@event as TSource);

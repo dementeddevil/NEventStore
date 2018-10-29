@@ -1,21 +1,22 @@
+using System;
+using System.Collections;
+using System.Collections.Generic;
+using System.Data;
+using System.Threading;
+using System.Transactions;
+using NEventStore.Logging;
+
 namespace NEventStore.Persistence.Sql.SqlDialects
 {
-    using System;
-    using System.Collections;
-    using System.Collections.Generic;
-    using System.Data;
-    using System.Transactions;
-    using NEventStore.Logging;
-    using NEventStore.Persistence.Sql;
-
     public class PagedEnumerationCollection : IEnumerable<IDataRecord>, IEnumerator<IDataRecord>
     {
         private static readonly ILog Logger = LogFactory.BuildLogger(typeof (PagedEnumerationCollection));
         private readonly IDbCommand _command;
         private readonly ISqlDialect _dialect;
         private readonly IEnumerable<IDisposable> _disposable = new IDisposable[] {};
-        private readonly NextPageDelegate _nextpage;
+        private readonly NextPageDelegate _nextPage;
         private readonly int _pageSize;
+        private readonly CancellationToken _cancellationToken;
         private readonly TransactionScope _scope;
 
         private IDataRecord _current;
@@ -27,15 +28,17 @@ namespace NEventStore.Persistence.Sql.SqlDialects
             TransactionScope scope,
             ISqlDialect dialect,
             IDbCommand command,
-            NextPageDelegate nextpage,
+            NextPageDelegate nextPage,
             int pageSize,
+            CancellationToken cancellationToken,
             params IDisposable[] disposable)
         {
             _scope = scope;
             _dialect = dialect;
             _command = command;
-            _nextpage = nextpage;
+            _nextPage = nextPage;
             _pageSize = pageSize;
+            _cancellationToken = cancellationToken;
             _disposable = disposable ?? _disposable;
         }
 
@@ -94,10 +97,7 @@ namespace NEventStore.Persistence.Sql.SqlDialects
             }
         }
 
-        object IEnumerator.Current
-        {
-            get { return ((IEnumerator<IDataRecord>) this).Current; }
-        }
+        object IEnumerator.Current => ((IEnumerator<IDataRecord>) this).Current;
 
         protected virtual void Dispose(bool disposing)
         {
@@ -110,24 +110,15 @@ namespace NEventStore.Persistence.Sql.SqlDialects
             _position = 0;
             _current = null;
 
-            if (_reader != null)
-            {
-                _reader.Dispose();
-            }
+            _reader?.Dispose();
 
             _reader = null;
 
-            if (_command != null)
-            {
-                _command.Dispose();
-            }
+            _command?.Dispose();
 
             // queries do not modify state and thus calling Complete() on a so-called 'failed' query only
             // allows any outer transaction scope to decide the fate of the transaction
-            if (_scope != null)
-            {
-                _scope.Complete(); // caller will dispose scope.
-            }
+            _scope?.Complete(); // caller will dispose scope.
 
             foreach (var dispose in _disposable)
             {
@@ -140,7 +131,7 @@ namespace NEventStore.Persistence.Sql.SqlDialects
             if (_pageSize > 0 && _position >= _pageSize)
             {
                 _command.SetParameter(_dialect.Skip, _position);
-                _nextpage(_command, _current);
+                _nextPage(_command, _current);
             }
 
             _reader = _reader ?? OpenNextPage();

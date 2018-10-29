@@ -17,7 +17,7 @@ namespace NEventStore.Serialization
         {
             if (!KeyIsValid(encryptionKey, KeyLength))
             {
-                throw new ArgumentException(Messages.InvalidKeyLength, "encryptionKey");
+                throw new ArgumentException(Messages.InvalidKeyLength, nameof(encryptionKey));
             }
 
             _encryptionKey = encryptionKey;
@@ -34,7 +34,7 @@ namespace NEventStore.Serialization
                 aes.Mode = CipherMode.CBC;
                 aes.GenerateIV();
 
-                using (ICryptoTransform encryptor = aes.CreateEncryptor())
+                using (var encryptor = aes.CreateEncryptor())
                 using (var wrappedOutput = new IndisposableStream(output))
                 using (var encryptionStream = new CryptoStream(wrappedOutput, encryptor, CryptoStreamMode.Write))
                 {
@@ -56,7 +56,7 @@ namespace NEventStore.Serialization
                 aes.IV = GetInitVectorFromStream(input, aes.IV.Length);
                 aes.Mode = CipherMode.CBC;
 
-                using (ICryptoTransform decryptor = aes.CreateDecryptor())
+                using (var decryptor = aes.CreateDecryptor())
                 using (var decryptedStream = new CryptoStream(input, decryptor, CryptoStreamMode.Read))
                     return _inner.Deserialize<T>(decryptedStream);
             }

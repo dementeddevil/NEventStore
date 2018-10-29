@@ -27,7 +27,7 @@ namespace NEventStore.Serialization
 
         private static bool IsArray(Type type)
         {
-            bool array = typeof (IEnumerable).IsAssignableFrom(type) && !typeof (IDictionary).IsAssignableFrom(type);
+            var array = typeof (IEnumerable).IsAssignableFrom(type) && !typeof (IDictionary).IsAssignableFrom(type);
 
             Logger.Verbose(Messages.TypeIsArray, type, array);
 

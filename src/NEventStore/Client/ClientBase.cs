@@ -11,11 +11,7 @@
             _persistStreams = persistStreams;
         }
 
-        protected IPersistStreams PersistStreams
-        {
-            get { return _persistStreams; }
-        }
-
+        protected IPersistStreams PersistStreams => _persistStreams;
 
         /// <summary>
         /// Observe commits from the sepecified checkpoint token. If the token is null,

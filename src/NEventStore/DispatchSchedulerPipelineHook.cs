@@ -1,5 +1,7 @@
 namespace NEventStore
 {
+    using System.Threading;
+    using System.Threading.Tasks;
     using NEventStore.Dispatcher;
 
     public sealed class DispatchSchedulerPipelineHook : PipelineHookBase
@@ -16,12 +18,14 @@ namespace NEventStore
             _scheduler.Dispose();
         }
 
-        public override void PostCommit(ICommit committed)
+        public override Task PostCommitAsync(ICommit committed, CancellationToken cancellationToken)
         {
             if (committed != null)
             {
-                _scheduler.ScheduleDispatch(committed);
+                _scheduler.ScheduleDispatch(committed, cancellationToken);
             }
+
+            return Task.CompletedTask;
         }
     }
 }

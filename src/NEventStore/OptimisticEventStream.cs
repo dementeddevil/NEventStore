@@ -4,6 +4,8 @@ namespace NEventStore
     using System.Collections.Generic;
     using System.Diagnostics.CodeAnalysis;
     using System.Linq;
+    using System.Threading;
+    using System.Threading.Tasks;
     using NEventStore.Logging;
 
     [SuppressMessage("Microsoft.Naming", "CA1711:IdentifiersShouldNotHaveIncorrectSuffix",
@@ -26,10 +28,12 @@ namespace NEventStore
             _persistence = persistence;
         }
 
-        public OptimisticEventStream(string bucketId, string streamId, ICommitEvents persistence, int minRevision, int maxRevision)
+        public OptimisticEventStream(string bucketId, string streamId, ICommitEvents persistence, int minRevision, int maxRevision, CancellationToken cancellationToken)
             : this(bucketId, streamId, persistence)
         {
-            IEnumerable<ICommit> commits = persistence.GetFrom(bucketId, streamId, minRevision, maxRevision);
+            IEnumerable<ICommit> commits = persistence
+                .GetFromAsync(bucketId, streamId, minRevision, maxRevision, cancellationToken)
+                .GetAwaiter().GetResult();
             PopulateStream(minRevision, maxRevision, commits);
 
             if (minRevision > 0 && _committed.Count == 0)
@@ -38,42 +42,35 @@ namespace NEventStore
             }
         }
 
-        public OptimisticEventStream(ISnapshot snapshot, ICommitEvents persistence, int maxRevision)
+        public OptimisticEventStream(ISnapshot snapshot, ICommitEvents persistence, int maxRevision, CancellationToken cancellationToken)
             : this(snapshot.BucketId, snapshot.StreamId, persistence)
         {
-            IEnumerable<ICommit> commits = persistence.GetFrom(snapshot.BucketId, snapshot.StreamId, snapshot.StreamRevision, maxRevision);
+            IEnumerable<ICommit> commits = persistence
+                .GetFromAsync(snapshot.BucketId, snapshot.StreamId, snapshot.StreamRevision, maxRevision, cancellationToken)
+                .GetAwaiter().GetResult();
             PopulateStream(snapshot.StreamRevision + 1, maxRevision, commits);
             StreamRevision = snapshot.StreamRevision + _committed.Count;
         }
 
-        public string BucketId { get; private set; }
-        public string StreamId { get; private set; }
+        public string BucketId { get; }
+
+        public string StreamId { get; }
+
         public int StreamRevision { get; private set; }
-		public int CommitSequence { get; private set; }
 
-        public ICollection<EventMessage> CommittedEvents
-        {
-            get { return new ImmutableCollection<EventMessage>(_committed); }
-        }
+        public int CommitSequence { get; private set; }
 
-        public IDictionary<string, object> CommittedHeaders
-        {
-            get { return _committedHeaders; }
-        }
+        public ICollection<EventMessage> CommittedEvents => new ImmutableCollection<EventMessage>(_committed);
 
-        public ICollection<EventMessage> UncommittedEvents
-        {
-            get { return new ImmutableCollection<EventMessage>(_events); }
-        }
+        public IDictionary<string, object> CommittedHeaders => _committedHeaders;
 
-        public IDictionary<string, object> UncommittedHeaders
-        {
-            get { return _uncommittedHeaders; }
-        }
+        public ICollection<EventMessage> UncommittedEvents => new ImmutableCollection<EventMessage>(_events);
+
+        public IDictionary<string, object> UncommittedHeaders => _uncommittedHeaders;
 
         public void Add(EventMessage uncommittedEvent)
         {
-            if (uncommittedEvent == null || uncommittedEvent.Body == null)
+            if (uncommittedEvent?.Body == null)
             {
                 return;
             }
@@ -82,7 +79,7 @@ namespace NEventStore
             _events.Add(uncommittedEvent);
         }
 
-        public void CommitChanges(Guid commitId)
+        public async Task CommitChangesAsync(Guid commitId, CancellationToken cancellationToken)
         {
             Logger.Debug(Resources.AttemptingToCommitChanges, StreamId);
 
@@ -98,12 +95,14 @@ namespace NEventStore
 
             try
             {
-                PersistChanges(commitId);
+                await PersistChanges(commitId, cancellationToken).ConfigureAwait(false);
             }
             catch (ConcurrencyException)
             {
                 Logger.Info(Resources.UnderlyingStreamHasChanged, StreamId);
-                IEnumerable<ICommit> commits = _persistence.GetFrom(BucketId, StreamId, StreamRevision + 1, int.MaxValue);
+                var commits = _persistence
+                    .GetFromAsync(BucketId, StreamId, StreamRevision + 1, int.MaxValue, cancellationToken)
+                    .GetAwaiter().GetResult();
                 PopulateStream(StreamRevision + 1, int.MaxValue, commits);
 
                 throw;
@@ -125,7 +124,7 @@ namespace NEventStore
                 _identifiers.Add(commit.CommitId);
 
                 CommitSequence = commit.CommitSequence;
-                int currentRevision = commit.StreamRevision - commit.Events.Count + 1;
+                var currentRevision = commit.StreamRevision - commit.Events.Count + 1;
                 if (currentRevision > maxRevision)
                 {
                     return;
@@ -181,12 +180,14 @@ namespace NEventStore
             return false;
         }
 
-        private void PersistChanges(Guid commitId)
+        private async Task PersistChanges(Guid commitId, CancellationToken cancellationToken)
         {
-            CommitAttempt attempt = BuildCommitAttempt(commitId);
+            var attempt = BuildCommitAttempt(commitId);
 
             Logger.Debug(Resources.PersistingCommit, commitId, StreamId);
-            ICommit commit = _persistence.Commit(attempt);
+            var commit = await _persistence
+                .CommitAsync(attempt, cancellationToken)
+                .ConfigureAwait(false);
 
             PopulateStream(StreamRevision + 1, attempt.StreamRevision, new[] { commit });
             ClearChanges();

@@ -1,27 +1,36 @@
 namespace NEventStore
 {
+    using System.Threading;
+    using System.Threading.Tasks;
+
     public abstract class PipelineHookBase : IPipelineHook
     {
         public virtual void Dispose()
         {}
 
-        public virtual ICommit Select(ICommit committed)
+        public virtual Task<ICommit> SelectAsync(ICommit committed, CancellationToken cancellationToken)
         {
-            return committed;
+            return Task.FromResult(committed);
         }
 
-        public virtual bool PreCommit(CommitAttempt attempt)
+        public virtual Task<bool> PreCommitAsync(CommitAttempt attempt, CancellationToken cancellationToken)
         {
-            return true;
+            return Task.FromResult(true);
         }
 
-        public virtual void PostCommit(ICommit committed)
-        {}
+        public virtual Task PostCommitAsync(ICommit committed, CancellationToken cancellationToken)
+        {
+            return Task.CompletedTask;
+        }
 
-        public virtual void OnPurge(string bucketId)
-        {}
+        public virtual Task OnPurgeAsync(string bucketId, CancellationToken cancellationToken)
+        {
+            return Task.CompletedTask;
+        }
 
-        public virtual void OnDeleteStream(string bucketId, string streamId)
-        {}
+        public virtual Task OnDeleteStreamAsync(string bucketId, string streamId, CancellationToken cancellationToken)
+        {
+            return Task.CompletedTask;
+        }
     }
 }

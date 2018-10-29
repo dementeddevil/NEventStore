@@ -8,7 +8,7 @@ namespace NEventStore.Persistence.Sql
     {
         public string GetHash(string streamId)
         {
-            byte[] hashBytes = SHA1.Create().ComputeHash(Encoding.UTF8.GetBytes(streamId));
+            var hashBytes = SHA1.Create().ComputeHash(Encoding.UTF8.GetBytes(streamId));
             return BitConverter.ToString(hashBytes).Replace("-", "");
         }
     }

@@ -14,7 +14,7 @@
             timer.Interval = milliseconds;
             timer.AutoReset = false;
             timer.Start();
-            CancellationTokenRegistration cancellationTokenRegistration = cancellationToken.Register(() =>
+            var cancellationTokenRegistration = cancellationToken.Register(() =>
             {
                 timer.Stop();
                 tcs.TrySetCanceled();

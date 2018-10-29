@@ -22,7 +22,7 @@ namespace NEventStore.Serialization
         public T Deserialize<T>(object document)
         {
             Logger.Verbose(Messages.DeserializingStream, typeof (T));
-            byte[] bytes = FromBase64(document as string) ?? document as byte[];
+            var bytes = FromBase64(document as string) ?? document as byte[];
             return _serializer.Deserialize<T>(bytes);
         }
 

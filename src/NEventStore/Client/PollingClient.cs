@@ -1,7 +1,6 @@
 ﻿namespace NEventStore.Client
 {
     using System;
-    using System.Collections.Generic;
     using System.Reactive;
     using System.Reactive.Subjects;
     using System.Threading;
@@ -19,7 +18,7 @@
         {
             if (persistStreams == null)
             {
-                throw new ArgumentNullException("persistStreams");
+                throw new ArgumentNullException(nameof(persistStreams));
             }
             if (interval <= 0)
             {
@@ -87,26 +86,30 @@
                     Dispose();
                     return;
                 }
-                TaskHelpers.Delay(_interval, _stopRequested.Token).WhenCompleted(_ =>
-                {
-                    try
+                TaskHelpers.Delay(_interval, _stopRequested.Token).WhenCompleted(
+                    async _ =>
                     {
-                        GetNextCommits(_stopRequested.Token);
-                    }
-                    catch (Exception ex)
-                    {
-                        _subject.OnError(ex);
-                        _runningTaskCompletionSource.TrySetException(ex);
-                        return;
-                    }
-                    Poll();
-                },
+                        try
+                        {
+                            await GetNextCommits(_stopRequested.Token).ConfigureAwait(false);
+                        }
+                        catch (Exception ex)
+                        {
+                            _subject.OnError(ex);
+                            _runningTaskCompletionSource.TrySetException(ex);
+                            return;
+                        }
+                        Poll();
+                    },
                     _ => Dispose());
             }
 
-            private void GetNextCommits(CancellationToken cancellationToken)
+            private async Task GetNextCommits(CancellationToken cancellationToken)
             {
-                IEnumerable<ICommit> commits = _persistStreams.GetFrom(_checkpointToken);
+                var commits = await _persistStreams
+                    .GetFromAsync(cancellationToken, _checkpointToken)
+                    .ConfigureAwait(false);
+
                 foreach (var commit in commits)
                 {
                     if (cancellationToken.IsCancellationRequested)
@@ -114,6 +117,7 @@
                         _subject.OnCompleted();
                         return;
                     }
+
                     _subject.OnNext(commit);
                     _checkpointToken = commit.CheckpointToken;
                 }

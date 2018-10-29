@@ -11,150 +11,63 @@ namespace NEventStore.Persistence.Sql.SqlDialects
         private const int UniqueKeyViolation = -2146232008;
         Action<IConnectionFactory, IDbConnection, IDbStatement, byte[]> _addPayloadParamater;
 
-        public override string AppendSnapshotToCommit
-        {
-            get { return OracleNativeStatements.AppendSnapshotToCommit; }
-        }
+        public override string AppendSnapshotToCommit => OracleNativeStatements.AppendSnapshotToCommit;
 
-        public override string CheckpointNumber
-        {
-            get { return MakeOracleParameter(base.CheckpointNumber); }
-        }
+        public override string CheckpointNumber => MakeOracleParameter(base.CheckpointNumber);
 
-        public override string CommitId
-        {
-            get { return MakeOracleParameter(base.CommitId); }
-        }
+        public override string CommitId => MakeOracleParameter(base.CommitId);
 
-        public override string CommitSequence
-        {
-            get { return MakeOracleParameter(base.CommitSequence); }
-        }
+        public override string CommitSequence => MakeOracleParameter(base.CommitSequence);
 
-        public override string CommitStamp
-        {
-            get { return MakeOracleParameter(base.CommitStamp); }
-        }
+        public override string CommitStamp => MakeOracleParameter(base.CommitStamp);
 
-        public override string CommitStampEnd
-        {
-            get { return MakeOracleParameter(base.CommitStampEnd); }
-        }
+        public override string CommitStampEnd => MakeOracleParameter(base.CommitStampEnd);
 
-        public override string CommitStampStart
-        {
-            get { return MakeOracleParameter(CommitStampStart); }
-        }
+        public override string CommitStampStart => MakeOracleParameter(CommitStampStart);
 
-        public override string DuplicateCommit
-        {
-            get { return OracleNativeStatements.DuplicateCommit; }
-        }
+        public override string DuplicateCommit => OracleNativeStatements.DuplicateCommit;
 
-        public override string GetSnapshot
-        {
-            get { return OracleNativeStatements.GetSnapshot; }
-        }
+        public override string GetSnapshot => OracleNativeStatements.GetSnapshot;
 
-        public override string GetCommitsFromStartingRevision
-        {
-            get { return LimitedQuery(OracleNativeStatements.GetCommitsFromStartingRevision); }
-        }
+        public override string GetCommitsFromStartingRevision => LimitedQuery(OracleNativeStatements.GetCommitsFromStartingRevision);
 
-        public override string GetCommitsFromInstant
-        {
-            get { return OraclePaging(OracleNativeStatements.GetCommitsFromInstant); }
-        }
+        public override string GetCommitsFromInstant => OraclePaging(OracleNativeStatements.GetCommitsFromInstant);
 
-        public override string GetCommitsFromCheckpoint
-        {
-            get { return OraclePaging(OracleNativeStatements.GetCommitsSinceCheckpoint); }
-        }
+        public override string GetCommitsFromCheckpoint => OraclePaging(OracleNativeStatements.GetCommitsSinceCheckpoint);
 
-        public override string GetUndispatchedCommits
-        {
-            get { return OraclePaging(base.GetUndispatchedCommits); }
-        }
+        public override string GetUndispatchedCommits => OraclePaging(base.GetUndispatchedCommits);
 
-        public override string GetStreamsRequiringSnapshots
-        {
-            get { return LimitedQuery(OracleNativeStatements.GetStreamsRequiringSnapshots); }
-        }
+        public override string GetStreamsRequiringSnapshots => LimitedQuery(OracleNativeStatements.GetStreamsRequiringSnapshots);
 
-        public override string InitializeStorage
-        {
-            get { return OracleNativeStatements.InitializeStorage; }
-        }
+        public override string InitializeStorage => OracleNativeStatements.InitializeStorage;
 
-        public override string Limit
-        {
-            get { return MakeOracleParameter(base.Limit); }
-        }
+        public override string Limit => MakeOracleParameter(base.Limit);
 
-        public override string MarkCommitAsDispatched
-        {
-            get { return OracleNativeStatements.MarkCommitAsDispatched; }
-        }
+        public override string MarkCommitAsDispatched => OracleNativeStatements.MarkCommitAsDispatched;
 
-        public override string PersistCommit
-        {
-            get { return OracleNativeStatements.PersistCommit; }
-        }
+        public override string PersistCommit => OracleNativeStatements.PersistCommit;
 
-        public override string PurgeStorage
-        {
-            get { return OracleNativeStatements.PurgeStorage; }
-        }
+        public override string PurgeStorage => OracleNativeStatements.PurgeStorage;
 
-        public override string DeleteStream
-        {
-            get { return OracleNativeStatements.DeleteStream; }
-        }
+        public override string DeleteStream => OracleNativeStatements.DeleteStream;
 
-        public override string Drop
-        {
-            get { return OracleNativeStatements.DropTables; }
-        }
+        public override string Drop => OracleNativeStatements.DropTables;
 
-        public override string Skip
-        {
-            get { return MakeOracleParameter(base.Skip); }
-        }
+        public override string Skip => MakeOracleParameter(base.Skip);
 
-        public override string BucketId
-        {
-            get { return MakeOracleParameter(base.BucketId); }
-        }
+        public override string BucketId => MakeOracleParameter(base.BucketId);
 
-        public override string StreamId
-        {
-            get { return MakeOracleParameter(base.StreamId); }
-        }
+        public override string StreamId => MakeOracleParameter(base.StreamId);
 
-        public override string StreamIdOriginal
-        {
-            get { return MakeOracleParameter(base.StreamIdOriginal); }
-        }
+        public override string StreamIdOriginal => MakeOracleParameter(base.StreamIdOriginal);
 
-        public override string Threshold
-        {
-            get { return MakeOracleParameter(base.Threshold); }
-        }
+        public override string Threshold => MakeOracleParameter(base.Threshold);
 
-        public override string Payload
-        {
-            get { return MakeOracleParameter(base.Payload); }
-        }
+        public override string Payload => MakeOracleParameter(base.Payload);
 
-        public override string StreamRevision
-        {
-            get { return MakeOracleParameter(base.StreamRevision); }
-        }
+        public override string StreamRevision => MakeOracleParameter(base.StreamRevision);
 
-        public override string MaxStreamRevision
-        {
-            get { return MakeOracleParameter(base.MaxStreamRevision); }
-        }
+        public override string MaxStreamRevision => MakeOracleParameter(base.MaxStreamRevision);
 
         public override IDbStatement BuildStatement(TransactionScope scope, IDbConnection connection, IDbTransaction transaction)
         {
@@ -173,8 +86,8 @@ namespace NEventStore.Persistence.Sql.SqlDialects
 
         private static string ExtractOrderBy(ref string query)
         {
-            int orderByIndex = query.IndexOf("ORDER BY", StringComparison.Ordinal);
-            string result = query.Substring(orderByIndex).Replace(";", String.Empty);
+            var orderByIndex = query.IndexOf("ORDER BY", StringComparison.Ordinal);
+            var result = query.Substring(orderByIndex).Replace(";", String.Empty);
             query = query.Substring(0, orderByIndex);
 
             return result;
@@ -194,7 +107,7 @@ namespace NEventStore.Persistence.Sql.SqlDialects
         {
             if (_addPayloadParamater == null)
             {
-                string dbProviderAssemblyName = connectionFactory.GetDbProviderFactoryType().Assembly.GetName().Name;
+                var dbProviderAssemblyName = connectionFactory.GetDbProviderFactoryType().Assembly.GetName().Name;
                 const string oracleManagedDataAcccessAssemblyName = "Oracle.ManagedDataAccess";
                 const string oracleDataAcccessAssemblyName = "Oracle.DataAccess";
                 if (dbProviderAssemblyName.Equals(oracleManagedDataAcccessAssemblyName, StringComparison.Ordinal))
@@ -217,21 +130,21 @@ namespace NEventStore.Persistence.Sql.SqlDialects
         private Action<IConnectionFactory, IDbConnection, IDbStatement, byte[]> CreateOraAddPayloadAction(
             string assemblyName)
         {
-            Assembly assembly = Assembly.Load(assemblyName);
+            var assembly = Assembly.Load(assemblyName);
             var oracleParamaterType = assembly.GetType(assemblyName + ".Client.OracleParameter", true);
             var oracleParamaterValueProperty = oracleParamaterType.GetProperty("Value");
             var oracleBlobType = assembly.GetType(assemblyName + ".Types.OracleBlob", true);
             var oracleBlobWriteMethod = oracleBlobType.GetMethod("Write", new []{ typeof(Byte[]), typeof(int), typeof(int)});
-            Type oracleParamapterType = assembly.GetType(assemblyName + ".Client.OracleDbType", true);
-            FieldInfo blobField = oracleParamapterType.GetField("Blob");
+            var oracleParamapterType = assembly.GetType(assemblyName + ".Client.OracleDbType", true);
+            var blobField = oracleParamapterType.GetField("Blob");
             var blobDbType = blobField.GetValue(null);
 
             return (_, connection2, cmd2, payload2) =>
             {
-                object payloadParam = Activator.CreateInstance(oracleParamaterType, new[] { Payload, blobDbType });
+                var payloadParam = Activator.CreateInstance(oracleParamaterType, new[] { Payload, blobDbType });
                 ((OracleDbStatement)cmd2).AddParameter(Payload, payloadParam);
                 object oracleConnection = ((ConnectionScope)connection2).Current;
-                object oracleBlob = Activator.CreateInstance(oracleBlobType, new[] { oracleConnection });
+                var oracleBlob = Activator.CreateInstance(oracleBlobType, new[] { oracleConnection });
                 oracleBlobWriteMethod.Invoke(oracleBlob, new object[] { payload2, 0, payload2.Length });
                 oracleParamaterValueProperty.SetValue(payloadParam, oracleBlob, null);
             };
@@ -244,7 +157,7 @@ namespace NEventStore.Persistence.Sql.SqlDialects
             {
                 query = query.TrimEnd(new[] {';'});
             }
-            string value = OracleNativeStatements.LimitedQueryFormat.FormatWith(query);
+            var value = OracleNativeStatements.LimitedQueryFormat.FormatWith(query);
             return value;
         }
 
@@ -257,14 +170,14 @@ namespace NEventStore.Persistence.Sql.SqlDialects
         {
             query = RemovePaging(query);
 
-            string orderBy = ExtractOrderBy(ref query);
+            var orderBy = ExtractOrderBy(ref query);
 
-            int fromIndex = query.IndexOf("FROM ", StringComparison.Ordinal);
-            string from = query.Substring(fromIndex);
+            var fromIndex = query.IndexOf("FROM ", StringComparison.Ordinal);
+            var from = query.Substring(fromIndex);
 
-            string select = query.Substring(0, fromIndex);
+            var select = query.Substring(0, fromIndex);
 
-            string value = OracleNativeStatements.PagedQueryFormat.FormatWith(select, orderBy, from);
+            var value = OracleNativeStatements.PagedQueryFormat.FormatWith(select, orderBy, from);
 
             return value;
         }

@@ -2,19 +2,21 @@ namespace CommonDomain.Persistence
 {
 	using System;
 	using System.Collections.Generic;
+	using System.Threading;
+	using System.Threading.Tasks;
 
-	public interface IRepository : IDisposable
+    public interface IRepository : IDisposable
 	{
-		TAggregate GetById<TAggregate>(Guid id) where TAggregate : class, IAggregate;
+	    Task<TAggregate> GetByIdAsync<TAggregate>(Guid id, CancellationToken cancellationToken) where TAggregate : class, IAggregate;
 
-		TAggregate GetById<TAggregate>(Guid id, int version) where TAggregate : class, IAggregate;
+	    Task<TAggregate> GetByIdAsync<TAggregate>(Guid id, int version, CancellationToken cancellationToken) where TAggregate : class, IAggregate;
 
-		TAggregate GetById<TAggregate>(string bucketId, Guid id) where TAggregate : class, IAggregate;
+	    Task<TAggregate> GetByIdAsync<TAggregate>(string bucketId, Guid id, CancellationToken cancellationToken) where TAggregate : class, IAggregate;
 
-		TAggregate GetById<TAggregate>(string bucketId, Guid id, int version) where TAggregate : class, IAggregate;
+	    Task<TAggregate> GetByIdAsync<TAggregate>(string bucketId, Guid id, int version, CancellationToken cancellationToken) where TAggregate : class, IAggregate;
 
-		void Save(IAggregate aggregate, Guid commitId, Action<IDictionary<string, object>> updateHeaders);
+		Task SaveAsync(IAggregate aggregate, Guid commitId, Action<IDictionary<string, object>> updateHeaders, CancellationToken cancellationToken);
 
-		void Save(string bucketId, IAggregate aggregate, Guid commitId, Action<IDictionary<string, object>> updateHeaders);
+		Task SaveAsync(string bucketId, IAggregate aggregate, Guid commitId, Action<IDictionary<string, object>> updateHeaders, CancellationToken cancellationToken);
 	}
 }

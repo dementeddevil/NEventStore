@@ -1,6 +1,7 @@
 namespace NEventStore.Dispatcher
 {
     using System;
+    using System.Threading;
 
     /// <summary>
     ///     Indicates the ability to schedule the specified commit for delivery--either now or in the future.
@@ -14,11 +15,13 @@ namespace NEventStore.Dispatcher
         ///     Schedules the series of messages contained within the commit provided for delivery to all interested parties.
         /// </summary>
         /// <param name="commit">The commit representing the series of messages to be dispatched.</param>
-        void ScheduleDispatch(ICommit commit);
+        /// <param name="cancellationToken">The cancellation token.</param>
+        void ScheduleDispatch(ICommit commit, CancellationToken cancellationToken);
 
         /// <summary>
         /// Start the dispatcher.
         /// </summary>
-        void Start();
+        /// <param name="cancellationToken">The cancellation token.</param>
+        void Start(CancellationToken cancellationToken);
     }
 }

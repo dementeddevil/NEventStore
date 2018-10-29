@@ -32,7 +32,7 @@ namespace CommonDomain.Core
 		{
 			if (handler == null)
 			{
-				throw new ArgumentNullException("handler");
+				throw new ArgumentNullException(nameof(handler));
 			}
 
 			this.Register(typeof(T), @event => handler((T)@event));
@@ -42,7 +42,7 @@ namespace CommonDomain.Core
 		{
 			if (aggregate == null)
 			{
-				throw new ArgumentNullException("aggregate");
+				throw new ArgumentNullException(nameof(aggregate));
 			}
 
 			this.registered = aggregate;
@@ -57,7 +57,7 @@ namespace CommonDomain.Core
 
 			foreach (var apply in applyMethods)
 			{
-				MethodInfo applyMethod = apply.Method;
+				var applyMethod = apply.Method;
 				this.handlers.Add(apply.MessageType, m => applyMethod.Invoke(aggregate, new[] { m }));
 			}
 		}
@@ -66,7 +66,7 @@ namespace CommonDomain.Core
 		{
 			if (eventMessage == null)
 			{
-				throw new ArgumentNullException("eventMessage");
+				throw new ArgumentNullException(nameof(eventMessage));
 			}
 
 			Action<object> handler;

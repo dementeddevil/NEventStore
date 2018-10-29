@@ -17,9 +17,6 @@ namespace NEventStore
         /// <summary>
         ///     Gets the current moment in time.
         /// </summary>
-        public static DateTime UtcNow
-        {
-            get { return Resolver == null ? DateTime.UtcNow : Resolver(); }
-        }
+        public static DateTime UtcNow => Resolver == null ? DateTime.UtcNow : Resolver();
     }
 }

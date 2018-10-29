@@ -1,12 +1,12 @@
+using System;
+using System.Data;
+using System.Data.Common;
+using System.Threading;
+using System.Threading.Tasks;
+using System.Transactions;
+
 namespace NEventStore.Persistence.Sql.SqlDialects
 {
-    using System;
-    using System.Data;
-    using System.Data.Common;
-    using System.Reflection;
-    using System.Transactions;
-    using NEventStore.Persistence.Sql;
-
     public class OracleDbStatement : CommonDbStatement
     {
         private readonly ISqlDialect _dialect;
@@ -31,12 +31,14 @@ namespace NEventStore.Persistence.Sql.SqlDialects
             }
         }
 
-        public override int ExecuteNonQuery(string commandText)
+        public override Task<int> ExecuteNonQuery(string commandText, CancellationToken cancellationToken)
         {
             try
             {
-                using (IDbCommand command = BuildCommand(commandText))
-                    return command.ExecuteNonQuery();
+                using (var command = BuildCommand(commandText))
+                {
+                    return Task.FromResult(command.ExecuteNonQuery());
+                }
             }
             catch (Exception e)
             {
@@ -51,8 +53,8 @@ namespace NEventStore.Persistence.Sql.SqlDialects
 
         protected override IDbCommand BuildCommand(string statement)
         {
-            IDbCommand command = base.BuildCommand(statement);
-            PropertyInfo pi = command.GetType().GetProperty("BindByName");
+            var command = base.BuildCommand(statement);
+            var pi = command.GetType().GetProperty("BindByName");
             if (pi != null)
             {
                 pi.SetValue(command, true, null);

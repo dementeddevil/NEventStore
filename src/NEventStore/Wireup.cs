@@ -2,6 +2,7 @@ namespace NEventStore
 {
     using System.Collections.Generic;
     using System.Linq;
+    using System.Threading;
     using System.Transactions;
     using NEventStore.Conversion;
     using NEventStore.Dispatcher;
@@ -24,10 +25,7 @@ namespace NEventStore
             _inner = inner;
         }
 
-        protected NanoContainer Container
-        {
-            get { return _container ?? _inner.Container; }
-        }
+        protected NanoContainer Container => _container ?? _inner.Container;
 
         public static Wireup Init()
         {
@@ -73,18 +71,18 @@ namespace NEventStore
         private static IStoreEvents BuildEventStore(NanoContainer context)
         {
             var scopeOption = context.Resolve<TransactionScopeOption>();
-            OptimisticPipelineHook concurrency = scopeOption == TransactionScopeOption.Suppress ? new OptimisticPipelineHook() : null;
+            var concurrency = scopeOption == TransactionScopeOption.Suppress ? new OptimisticPipelineHook() : null;
             var dispatchScheduler = context.Resolve<IScheduleDispatches>();
             var dispatchSchedulerHook = new DispatchSchedulerPipelineHook(dispatchScheduler);
             var upconverter = context.Resolve<EventUpconverterPipelineHook>();
 
-            ICollection<IPipelineHook> hooks = context.Resolve<ICollection<IPipelineHook>>() ?? new IPipelineHook[0];
+            var hooks = context.Resolve<ICollection<IPipelineHook>>() ?? new IPipelineHook[0];
             hooks = new IPipelineHook[] { concurrency, dispatchSchedulerHook, upconverter }
                 .Concat(hooks)
                 .Where(x => x != null)
                 .ToArray();
 
-            return new OptimisticEventStore(context.Resolve<IPersistStreams>(), hooks, dispatchScheduler.Start);
+            return new OptimisticEventStore(context.Resolve<IPersistStreams>(), hooks, () => dispatchScheduler.Start(CancellationToken.None));
         }
     }
 }

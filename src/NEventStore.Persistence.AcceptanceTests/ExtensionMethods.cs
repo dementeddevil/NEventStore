@@ -3,6 +3,7 @@ namespace NEventStore.Persistence.AcceptanceTests
     using System;
     using System.Collections.Generic;
     using System.Linq;
+    using System.Threading;
 
     public static class ExtensionMethods
     {
@@ -19,19 +20,19 @@ namespace NEventStore.Persistence.AcceptanceTests
         public static ICommit CommitSingle(this IPersistStreams persistence, string streamId = null)
         {
             CommitAttempt commitAttempt = (streamId ?? Guid.NewGuid().ToString()).BuildAttempt();
-            return persistence.Commit(commitAttempt);
+            return persistence.CommitAsync(commitAttempt, CancellationToken.None).GetAwaiter().GetResult();
         }
 
         public static ICommit CommitNext(this IPersistStreams persistence, ICommit previous)
         {
             var nextAttempt = previous.BuildNextAttempt();
-            return persistence.Commit(nextAttempt);
+            return persistence.CommitAsync(nextAttempt, CancellationToken.None).GetAwaiter().GetResult();
         }
 
         public static ICommit CommitNext(this IPersistStreams persistence, CommitAttempt previous)
         {
             var nextAttempt = previous.BuildNextAttempt();
-            return persistence.Commit(nextAttempt);
+            return persistence.CommitAsync(nextAttempt, CancellationToken.None).GetAwaiter().GetResult();
         }
 
         public static IEnumerable<CommitAttempt> CommitMany(this IPersistStreams persistence, int numberOfCommits, string streamId = null)
@@ -42,7 +43,7 @@ namespace NEventStore.Persistence.AcceptanceTests
             for (int i = 0; i < numberOfCommits; i++)
             {
                 attempt = attempt == null ? (streamId ?? Guid.NewGuid().ToString()).BuildAttempt() : attempt.BuildNextAttempt();
-                persistence.Commit(attempt);
+                persistence.CommitAsync(attempt, CancellationToken.None).GetAwaiter().GetResult();
                 commits.Add(attempt);
             }
 

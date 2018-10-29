@@ -3,6 +3,8 @@ namespace NEventStore.Persistence.Sql
     using System;
     using System.Collections.Generic;
     using System.Data;
+    using System.Threading;
+    using System.Threading.Tasks;
     using NEventStore.Persistence.Sql.SqlDialects;
 
     public interface IDbStatement : IDisposable
@@ -11,14 +13,14 @@ namespace NEventStore.Persistence.Sql
 
         void AddParameter(string name, object value, DbType? parameterType = null);
 
-        int ExecuteNonQuery(string commandText);
+        Task<int> ExecuteNonQuery(string commandText, CancellationToken cancellationToken);
 
-        int ExecuteWithoutExceptions(string commandText);
+        Task<int> ExecuteWithoutExceptions(string commandText, CancellationToken cancellationToken);
 
-        object ExecuteScalar(string commandText);
+        Task<object> ExecuteScalar(string commandText, CancellationToken cancellationToken);
 
-        IEnumerable<IDataRecord> ExecuteWithQuery(string queryText);
+        Task<IEnumerable<IDataRecord>> ExecuteWithQuery(string queryText, CancellationToken cancellationToken);
 
-        IEnumerable<IDataRecord> ExecutePagedQuery(string queryText, NextPageDelegate nextpage);
+        Task<IEnumerable<IDataRecord>> ExecutePagedQuery(string queryText, NextPageDelegate nextPage, CancellationToken cancellationToken);
     }
 }

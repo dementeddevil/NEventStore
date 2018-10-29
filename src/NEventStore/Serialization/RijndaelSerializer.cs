@@ -17,7 +17,7 @@ namespace NEventStore.Serialization
         {
             if (!KeyIsValid(encryptionKey, KeyLength))
             {
-                throw new ArgumentException(Messages.InvalidKeyLength, "encryptionKey");
+                throw new ArgumentException(Messages.InvalidKeyLength, nameof(encryptionKey));
             }
 
             _encryptionKey = encryptionKey;
@@ -34,7 +34,7 @@ namespace NEventStore.Serialization
                 rijndael.Mode = CipherMode.CBC;
                 rijndael.GenerateIV();
 
-                using (ICryptoTransform encryptor = rijndael.CreateEncryptor())
+                using (var encryptor = rijndael.CreateEncryptor())
                 using (var wrappedOutput = new IndisposableStream(output))
                 using (var encryptionStream = new CryptoStream(wrappedOutput, encryptor, CryptoStreamMode.Write))
                 {
@@ -56,7 +56,7 @@ namespace NEventStore.Serialization
                 rijndael.IV = GetInitVectorFromStream(input, rijndael.IV.Length);
                 rijndael.Mode = CipherMode.CBC;
 
-                using (ICryptoTransform decryptor = rijndael.CreateDecryptor())
+                using (var decryptor = rijndael.CreateDecryptor())
                 using (var decryptedStream = new CryptoStream(input, decryptor, CryptoStreamMode.Read))
                     return _inner.Deserialize<T>(decryptedStream);
             }

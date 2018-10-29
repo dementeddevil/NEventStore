@@ -3,7 +3,8 @@ namespace CommonDomain.Persistence.EventStore
     using System;
     using System.Collections.Generic;
     using System.Linq;
-
+    using System.Threading;
+    using System.Threading.Tasks;
     using NEventStore;
     using NEventStore.Persistence;
 
@@ -13,54 +14,54 @@ namespace CommonDomain.Persistence.EventStore
 
         private const string UndispatchedMessageHeader = "UndispatchedMessage.";
 
-        private readonly IStoreEvents eventStore;
+        private readonly IStoreEvents _eventStore;
 
-        private readonly IConstructSagas factory;
+        private readonly IConstructSagas _factory;
 
-        private readonly IDictionary<string, IEventStream> streams = new Dictionary<string, IEventStream>();
+        private readonly IDictionary<string, IEventStream> _streams = new Dictionary<string, IEventStream>();
 
         public SagaEventStoreRepository(IStoreEvents eventStore, IConstructSagas factory)
         {
             Guard.NotNull(() => eventStore, eventStore);
             Guard.NotNull(() => factory, factory);
-            this.eventStore = eventStore;
-            this.factory = factory;
+            _eventStore = eventStore;
+            _factory = factory;
         }
 
         public void Dispose()
         {
-            this.Dispose(true);
+            Dispose(true);
             GC.SuppressFinalize(this);
         }
 
-        public TSaga GetById<TSaga>(Guid sagaId) where TSaga : class, ISaga, new()
+        public Task<TSaga> GetByIdAsync<TSaga>(Guid sagaId, CancellationToken cancellationToken) where TSaga : class, ISaga, new()
         {
-            return GetById<TSaga>(Bucket.Default, sagaId);
+            return GetByIdAsync<TSaga>(Bucket.Default, sagaId, cancellationToken);
         }
 
-        public TSaga GetById<TSaga>(string bucketId, Guid sagaId) where TSaga : class, ISaga, new()
+        public async Task<TSaga> GetByIdAsync<TSaga>(string bucketId, Guid sagaId, CancellationToken cancellationToken) where TSaga : class, ISaga, new()
         {
-            ISaga saga = this.GetSaga<TSaga>();
-            ApplyEventsToSaga(this.OpenStream(bucketId, sagaId), saga);
+            var saga = GetSaga<TSaga>();
+            ApplyEventsToSaga(await OpenStreamAsync(bucketId, sagaId, cancellationToken).ConfigureAwait(false), saga);
             return saga as TSaga;
         }
 
-        public void Save(ISaga saga, Guid commitId, Action<IDictionary<string, object>> updateHeaders)
+        public Task SaveAsync(ISaga saga, Guid commitId, Action<IDictionary<string, object>> updateHeaders, CancellationToken cancellationToken)
         {
-            Save(Bucket.Default, saga, commitId, updateHeaders);
+            return SaveAsync(Bucket.Default, saga, commitId, updateHeaders, cancellationToken);
         }
 
-        public void Save(string bucketId, ISaga saga, Guid commitId, Action<IDictionary<string, object>> updateHeaders)
+        public async Task SaveAsync(string bucketId, ISaga saga, Guid commitId, Action<IDictionary<string, object>> updateHeaders, CancellationToken cancellationToken)
         {
             if (saga == null)
             {
-                throw new ArgumentNullException("saga", ExceptionMessages.NullArgument);
+                throw new ArgumentNullException(nameof(saga), ExceptionMessages.NullArgument);
             }
 
-            Dictionary<string, object> headers = PrepareHeaders(saga, updateHeaders);
-            IEventStream stream = this.PrepareStream(bucketId, saga, headers);
+            var headers = PrepareHeaders(saga, updateHeaders);
+            var stream = await PrepareStream(bucketId, saga, headers, cancellationToken).ConfigureAwait(false);
 
-            Persist(stream, commitId);
+            await PersistAsync(stream, commitId, cancellationToken).ConfigureAwait(false);
 
             saga.ClearUncommittedEvents();
             saga.ClearUndispatchedMessages();
@@ -73,40 +74,41 @@ namespace CommonDomain.Persistence.EventStore
                 return;
             }
 
-            lock (this.streams)
+            lock (_streams)
             {
-                foreach (var stream in this.streams)
+                foreach (var stream in _streams)
                 {
                     stream.Value.Dispose();
                 }
 
-                this.streams.Clear();
+                _streams.Clear();
             }
         }
 
-        private IEventStream OpenStream(string bucketId, Guid sagaId)
+        private async Task<IEventStream> OpenStreamAsync(string bucketId, Guid sagaId, CancellationToken cancellationToken)
         {
-            IEventStream stream;
-            string streamsId = bucketId + sagaId;
+            var streamsId = bucketId + sagaId;
 
-            if (this.streams.TryGetValue(streamsId, out stream))
-            { return stream; }
+            if (_streams.TryGetValue(streamsId, out var stream))
+            {
+                return stream;
+            }
 
             try
             {
-                stream = this.eventStore.OpenStream(bucketId, sagaId, 0, int.MaxValue);
+                stream = await _eventStore.OpenStreamAsync(bucketId, sagaId, cancellationToken, 0/*, int.MaxValue*/).ConfigureAwait(false);
             }
             catch (StreamNotFoundException)
             {
-                stream = this.eventStore.CreateStream(sagaId);
+                stream = await _eventStore.CreateStreamAsync(sagaId, cancellationToken).ConfigureAwait(false);
             }
 
-            return this.streams[streamsId] = stream;
+            return _streams[streamsId] = stream;
         }
 
         private ISaga GetSaga<TSaga>() where TSaga : class, ISaga, new()
         {
-            return this.factory.Build(typeof(TSaga));
+            return _factory.Build(typeof(TSaga));
         }
 
         private static void ApplyEventsToSaga(IEventStream stream, ISaga saga)
@@ -126,12 +128,9 @@ namespace CommonDomain.Persistence.EventStore
             var headers = new Dictionary<string, object>();
 
             headers[SagaTypeHeader] = saga.GetType().FullName;
-            if (updateHeaders != null)
-            {
-                updateHeaders(headers);
-            }
+            updateHeaders?.Invoke(headers);
 
-            int i = 0;
+            var i = 0;
             foreach (var command in saga.GetUndispatchedMessages())
             {
                 headers[UndispatchedMessageHeader + i++] = command;
@@ -140,14 +139,15 @@ namespace CommonDomain.Persistence.EventStore
             return headers;
         }
 
-        private IEventStream PrepareStream(string bucketId, ISaga saga, Dictionary<string, object> headers)
+        private async Task<IEventStream> PrepareStream(string bucketId, ISaga saga, Dictionary<string, object> headers, CancellationToken cancellationToken)
         {
-            IEventStream stream;
-            string streamsId = bucketId + saga.Id;
+            var streamsId = bucketId + saga.Id;
 
-            if (!this.streams.TryGetValue(streamsId, out stream))
+            if (!_streams.TryGetValue(streamsId, out var stream))
             {
-                this.streams[streamsId] = stream = this.eventStore.CreateStream(saga.Id);
+                _streams[streamsId] = stream = (await _eventStore
+                    .CreateStreamAsync(saga.Id, cancellationToken)
+                    .ConfigureAwait(false));
             }
 
             foreach (var item in headers)
@@ -160,11 +160,11 @@ namespace CommonDomain.Persistence.EventStore
             return stream;
         }
 
-        private static void Persist(IEventStream stream, Guid commitId)
+        private static async Task PersistAsync(IEventStream stream, Guid commitId, CancellationToken cancellationToken)
         {
             try
             {
-                stream.CommitChanges(commitId);
+                await stream.CommitChangesAsync(commitId, cancellationToken).ConfigureAwait(false);
             }
             catch (DuplicateCommitException)
             {

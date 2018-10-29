@@ -1,6 +1,7 @@
 namespace NEventStore.Dispatcher
 {
     using System;
+    using System.Threading;
     using NEventStore.Logging;
     using NEventStore.Persistence;
 
@@ -12,10 +13,7 @@ namespace NEventStore.Dispatcher
         private bool _disposed;
         private bool _started;
 
-        protected bool Started
-        {
-            get { return _started; }
-        }
+        protected bool Started => _started;
 
         public SynchronousDispatchScheduler(IDispatchCommits dispatcher, IPersistStreams persistence)
         {
@@ -31,14 +29,14 @@ namespace NEventStore.Dispatcher
             GC.SuppressFinalize(this);
         }
 
-        public virtual void ScheduleDispatch(ICommit commit)
+        public virtual void ScheduleDispatch(ICommit commit, CancellationToken cancellationToken)
         {
             if (!Started)
             {
                 throw new InvalidOperationException(Messages.SchedulerNotStarted);
             }
             DispatchImmediately(commit);
-            MarkAsDispatched(commit);
+            MarkAsDispatched(commit, cancellationToken);
         }
 
         protected virtual void Dispose(bool disposing)
@@ -54,15 +52,15 @@ namespace NEventStore.Dispatcher
             _persistence.Dispose();
         }
 
-        public virtual void Start()
+        public virtual async void Start(CancellationToken cancellationToken)
         {
             Logger.Debug(Resources.InitializingPersistence);
-            _persistence.Initialize();
+            await _persistence.InitializeAsync(cancellationToken).ConfigureAwait(false);
             _started = true;
             Logger.Debug(Resources.GettingUndispatchedCommits);
-            foreach (var commit in _persistence.GetUndispatchedCommits())
+            foreach (var commit in await _persistence.GetUndispatchedCommitsAsync(cancellationToken).ConfigureAwait(false))
             {
-                ScheduleDispatch(commit);
+                ScheduleDispatch(commit, cancellationToken);
             }
         }
 
@@ -80,12 +78,12 @@ namespace NEventStore.Dispatcher
             }
         }
 
-        private void MarkAsDispatched(ICommit commit)
+        private void MarkAsDispatched(ICommit commit, CancellationToken cancellationToken)
         {
             try
             {
                 Logger.Info(Resources.MarkingCommitAsDispatched, commit.CommitId);
-                _persistence.MarkCommitAsDispatched(commit);
+                _persistence.MarkCommitAsDispatchedAsync(commit, cancellationToken);
             }
             catch (ObjectDisposedException)
             {

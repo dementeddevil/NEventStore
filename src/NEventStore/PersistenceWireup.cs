@@ -1,6 +1,7 @@
 namespace NEventStore
 {
     using System;
+    using System.Threading;
     using System.Transactions;
     using NEventStore.Diagnostics;
     using NEventStore.Logging;
@@ -43,7 +44,7 @@ namespace NEventStore
         {
             if (instanceName == null)
             {
-                throw new ArgumentNullException("instanceName", Messages.InstanceCannotBeNull);
+                throw new ArgumentNullException(nameof(instanceName), Messages.InstanceCannotBeNull);
             }
 
             Logger.Debug(Messages.ConfiguringEnginePerformanceTracking);
@@ -67,7 +68,7 @@ namespace NEventStore
             if (_initialize)
             {
                 Logger.Debug(Messages.InitializingEngine);
-                engine.Initialize();
+                engine.InitializeAsync(CancellationToken.None);
             }
 
             if (_tracking)

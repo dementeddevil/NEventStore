@@ -9,167 +9,71 @@ namespace NEventStore.Persistence.Sql.SqlDialects
     {
         public abstract string InitializeStorage { get; }
 
-        public virtual string PurgeStorage
-        {
-            get { return CommonSqlStatements.PurgeStorage; }
-        }
+        public virtual string PurgeStorage => CommonSqlStatements.PurgeStorage;
 
-        public string PurgeBucket
-        {
-            get { return CommonSqlStatements.PurgeBucket; }
-        }
+        public string PurgeBucket => CommonSqlStatements.PurgeBucket;
 
-        public virtual string Drop
-        {
-            get { return CommonSqlStatements.DropTables; }
-        }
+        public virtual string Drop => CommonSqlStatements.DropTables;
 
-        public virtual string DeleteStream
-        {
-            get { return CommonSqlStatements.DeleteStream; }
-        }
+        public virtual string DeleteStream => CommonSqlStatements.DeleteStream;
 
-        public virtual string GetCommitsFromStartingRevision
-        {
-            get { return CommonSqlStatements.GetCommitsFromStartingRevision; }
-        }
+        public virtual string GetCommitsFromStartingRevision => CommonSqlStatements.GetCommitsFromStartingRevision;
 
-        public virtual string GetCommitsFromInstant
-        {
-            get { return CommonSqlStatements.GetCommitsFromInstant; }
-        }
+        public virtual string GetCommitsFromInstant => CommonSqlStatements.GetCommitsFromInstant;
 
-        public virtual string GetCommitsFromToInstant
-        {
-            get { return CommonSqlStatements.GetCommitsFromToInstant; }
-        }
+        public virtual string GetCommitsFromToInstant => CommonSqlStatements.GetCommitsFromToInstant;
 
         public abstract string PersistCommit { get; }
 
-        public virtual string DuplicateCommit
-        {
-            get { return CommonSqlStatements.DuplicateCommit; }
-        }
+        public virtual string DuplicateCommit => CommonSqlStatements.DuplicateCommit;
 
-        public virtual string GetStreamsRequiringSnapshots
-        {
-            get { return CommonSqlStatements.GetStreamsRequiringSnapshots; }
-        }
+        public virtual string GetStreamsRequiringSnapshots => CommonSqlStatements.GetStreamsRequiringSnapshots;
 
-        public virtual string GetSnapshot
-        {
-            get { return CommonSqlStatements.GetSnapshot; }
-        }
+        public virtual string GetSnapshot => CommonSqlStatements.GetSnapshot;
 
-        public virtual string AppendSnapshotToCommit
-        {
-            get { return CommonSqlStatements.AppendSnapshotToCommit; }
-        }
+        public virtual string AppendSnapshotToCommit => CommonSqlStatements.AppendSnapshotToCommit;
 
-        public virtual string GetUndispatchedCommits
-        {
-            get { return CommonSqlStatements.GetUndispatchedCommits; }
-        }
+        public virtual string GetUndispatchedCommits => CommonSqlStatements.GetUndispatchedCommits;
 
-        public virtual string MarkCommitAsDispatched
-        {
-            get { return CommonSqlStatements.MarkCommitAsDispatched; }
-        }
+        public virtual string MarkCommitAsDispatched => CommonSqlStatements.MarkCommitAsDispatched;
 
-        public virtual string BucketId
-        {
-            get { return "@BucketId"; }
-        }
+        public virtual string BucketId => "@BucketId";
 
-        public virtual string StreamId
-        {
-            get { return "@StreamId"; }
-        }
+        public virtual string StreamId => "@StreamId";
 
-        public virtual string StreamIdOriginal
-        {
-            get { return "@StreamIdOriginal"; }
-        }
+        public virtual string StreamIdOriginal => "@StreamIdOriginal";
 
-        public virtual string StreamRevision
-        {
-            get { return "@StreamRevision"; }
-        }
+        public virtual string StreamRevision => "@StreamRevision";
 
-        public virtual string MaxStreamRevision
-        {
-            get { return "@MaxStreamRevision"; }
-        }
+        public virtual string MaxStreamRevision => "@MaxStreamRevision";
 
-        public virtual string Items
-        {
-            get { return "@Items"; }
-        }
+        public virtual string Items => "@Items";
 
-        public virtual string CommitId
-        {
-            get { return "@CommitId"; }
-        }
+        public virtual string CommitId => "@CommitId";
 
-        public virtual string CommitSequence
-        {
-            get { return "@CommitSequence"; }
-        }
+        public virtual string CommitSequence => "@CommitSequence";
 
-        public virtual string CommitStamp
-        {
-            get { return "@CommitStamp"; }
-        }
+        public virtual string CommitStamp => "@CommitStamp";
 
-        public virtual string CommitStampStart
-        {
-            get { return "@CommitStampStart"; }
-        }
+        public virtual string CommitStampStart => "@CommitStampStart";
 
-        public virtual string CommitStampEnd
-        {
-            get { return "@CommitStampEnd"; }
-        }
+        public virtual string CommitStampEnd => "@CommitStampEnd";
 
-        public virtual string Headers
-        {
-            get { return "@Headers"; }
-        }
+        public virtual string Headers => "@Headers";
 
-        public virtual string Payload
-        {
-            get { return "@Payload"; }
-        }
+        public virtual string Payload => "@Payload";
 
-        public virtual string Threshold
-        {
-            get { return "@Threshold"; }
-        }
+        public virtual string Threshold => "@Threshold";
 
-        public virtual string Limit
-        {
-            get { return "@Limit"; }
-        }
+        public virtual string Limit => "@Limit";
 
-        public virtual string Skip
-        {
-            get { return "@Skip"; }
-        }
+        public virtual string Skip => "@Skip";
 
-        public virtual bool CanPage
-        {
-            get { return true; }
-        }
+        public virtual bool CanPage => true;
 
-        public virtual string CheckpointNumber
-        {
-            get { return "@CheckpointNumber"; }
-        }
+        public virtual string CheckpointNumber => "@CheckpointNumber";
 
-        public virtual string GetCommitsFromCheckpoint
-        {
-            get { return CommonSqlStatements.GetCommitsFromCheckpoint; }
-        }
+        public virtual string GetCommitsFromCheckpoint => CommonSqlStatements.GetCommitsFromCheckpoint;
 
         public virtual object CoalesceParameterValue(object value)
         {
@@ -178,7 +82,7 @@ namespace NEventStore.Persistence.Sql.SqlDialects
 
         public virtual bool IsDuplicate(Exception exception)
         {
-            string message = exception.Message.ToUpperInvariant();
+            var message = exception.Message.ToUpperInvariant();
             return message.Contains("DUPLICATE") || message.Contains("UNIQUE") || message.Contains("CONSTRAINT");
         }
 

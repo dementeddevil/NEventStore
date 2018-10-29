@@ -40,55 +40,22 @@ namespace NEventStore.Persistence
                 new ReadOnlyCollection<EventMessage>(new List<EventMessage>(events));
         }
 
-        public string BucketId
-        {
-            get { return _bucketId; }
-        }
+        public string BucketId => _bucketId;
 
-        public string StreamId
-        {
-            get { return _streamId; }
-        }
+        public string StreamId => _streamId;
 
-        public int StreamRevision
-        {
-            get { return _streamRevision; }
-        }
+        public int StreamRevision => _streamRevision;
 
-        public Guid CommitId
-        {
-            get { return _commitId; }
-        }
+        public Guid CommitId => _commitId;
 
-        public int CommitSequence
-        {
-            get { return _commitSequence; }
-        }
+        public int CommitSequence => _commitSequence;
 
-        public DateTime CommitStamp
-        {
-            get { return _commitStamp; }
-        }
+        public DateTime CommitStamp => _commitStamp;
 
-        public IDictionary<string, object> Headers 
-        {
-            get { return _headers; }
-        }
+        public IDictionary<string, object> Headers => _headers;
 
-        public ICollection<EventMessage> Events
-        {
-            get
-            {
-                return _events;
-            }
-        }
+        public ICollection<EventMessage> Events => _events;
 
-        public string CheckpointToken
-        {
-            get
-            {
-                return _checkpointToken;
-            }
-        }
+        public string CheckpointToken => _checkpointToken;
     }
 }

@@ -103,68 +103,41 @@ namespace NEventStore
         /// <summary>
         ///     Gets the value which identifies bucket to which the the stream and the the commit belongs.
         /// </summary>
-        public string BucketId
-        {
-            get { return _bucketId; }
-        }
+        public string BucketId => _bucketId;
 
         /// <summary>
         ///     Gets the value which uniquely identifies the stream to which the commit belongs.
         /// </summary>
-        public string StreamId
-        {
-            get { return _streamId; }
-        }
+        public string StreamId => _streamId;
 
         /// <summary>
         ///     Gets the value which indicates the revision of the most recent event in the stream to which this commit applies.
         /// </summary>
-        public int StreamRevision
-        {
-            get { return _streamRevision; }
-        }
+        public int StreamRevision => _streamRevision;
 
         /// <summary>
         ///     Gets the value which uniquely identifies the commit within the stream.
         /// </summary>
-        public Guid CommitId
-        {
-            get { return _commitId; }
-        }
+        public Guid CommitId => _commitId;
 
         /// <summary>
         ///     Gets the value which indicates the sequence (or position) in the stream to which this commit applies.
         /// </summary>
-        public int CommitSequence
-        {
-            get { return _commitSequence; }
-        }
+        public int CommitSequence => _commitSequence;
 
         /// <summary>
         ///     Gets the point in time at which the commit was persisted.
         /// </summary>
-        public DateTime CommitStamp
-        {
-            get { return _commitStamp; }
-        }
+        public DateTime CommitStamp => _commitStamp;
 
         /// <summary>
         ///     Gets the metadata which provides additional, unstructured information about this commit.
         /// </summary>
-        public IDictionary<string, object> Headers 
-        {
-            get { return _headers; }
-        }
+        public IDictionary<string, object> Headers => _headers;
 
         /// <summary>
         ///     Gets the collection of event messages to be committed as a single unit.
         /// </summary>
-        public ICollection<EventMessage> Events
-        {
-            get
-            {
-                return _events;
-            }
-        }
+        public ICollection<EventMessage> Events => _events;
     }
 }

@@ -59,7 +59,7 @@ namespace NEventStore.Persistence.Sql
                 return default(T);
             }
 
-            object value = record[index];
+            var value = record[index];
             if (value == null || value == DBNull.Value)
             {
                 return default(T);

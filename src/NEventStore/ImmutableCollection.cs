@@ -15,30 +15,18 @@ namespace NEventStore
             _inner = inner;
         }
 
-        public virtual object SyncRoot
-        {
-            get { return _lock; }
-        }
+        public virtual object SyncRoot => _lock;
 
-        public virtual bool IsSynchronized
-        {
-            get { return false; }
-        }
+        public virtual bool IsSynchronized => false;
 
         public virtual void CopyTo(Array array, int index)
         {
             CopyTo(array.Cast<T>().ToArray(), index);
         }
 
-        public virtual int Count
-        {
-            get { return _inner.Count; }
-        }
+        public virtual int Count => _inner.Count;
 
-        public virtual bool IsReadOnly
-        {
-            get { return true; }
-        }
+        public virtual bool IsReadOnly => true;
 
         public virtual IEnumerator<T> GetEnumerator()
         {

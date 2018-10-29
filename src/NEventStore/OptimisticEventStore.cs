@@ -2,14 +2,15 @@ namespace NEventStore
 {
     using System;
     using System.Collections.Generic;
-    using System.Linq;
+    using System.Threading;
+    using System.Threading.Tasks;
     using NEventStore.Logging;
     using NEventStore.Persistence;
 
     public class OptimisticEventStore : IStoreEvents, ICommitEvents
     {
         private readonly Action _startScheduler;
-        private static readonly ILog Logger = LogFactory.BuildLogger(typeof (OptimisticEventStore));
+        private static readonly ILog Logger = LogFactory.BuildLogger(typeof(OptimisticEventStore));
         private readonly IPersistStreams _persistence;
         private readonly IEnumerable<IPipelineHook> _pipelineHooks;
 
@@ -17,7 +18,7 @@ namespace NEventStore
         {
             if (persistence == null)
             {
-                throw new ArgumentNullException("persistence");
+                throw new ArgumentNullException(nameof(persistence));
             }
 
             _pipelineHooks = pipelineHooks ?? new IPipelineHook[0];
@@ -25,16 +26,30 @@ namespace NEventStore
             _persistence = new PipelineHooksAwarePersistanceDecorator(persistence, _pipelineHooks);
         }
 
-        public virtual IEnumerable<ICommit> GetFrom(string bucketId, string streamId, int minRevision, int maxRevision)
+        public virtual async Task<IEnumerable<ICommit>> GetFromAsync(string bucketId, string streamId, int minRevision, int maxRevision, CancellationToken cancellationToken)
         {
-            foreach (var commit in _persistence.GetFrom(bucketId, streamId, minRevision, maxRevision))
+            var result = new List<ICommit>();
+            foreach (var commit in await _persistence
+                .GetFromAsync(bucketId, streamId, minRevision, maxRevision, cancellationToken)
+                .ConfigureAwait(false))
             {
-                ICommit filtered = commit;
-                foreach (var hook in _pipelineHooks.Where(x => (filtered = x.Select(filtered)) == null))
+                var filtered = commit;
+                foreach (var hook in _pipelineHooks)
                 {
-                    Logger.Info(Resources.PipelineHookSkippedCommit, hook.GetType(), commit.CommitId);
-                    break;
+                    cancellationToken.ThrowIfCancellationRequested();
+
+                    filtered = await hook
+                        .SelectAsync(filtered, cancellationToken)
+                        .ConfigureAwait(false);
+
+                    if (filtered == null)
+                    {
+                        Logger.Info(Resources.PipelineHookSkippedCommit, hook.GetType(), commit.CommitId);
+                        break;
+                    }
                 }
+
+                cancellationToken.ThrowIfCancellationRequested();
 
                 if (filtered == null)
                 {
@@ -42,18 +57,23 @@ namespace NEventStore
                 }
                 else
                 {
-                    yield return filtered;
+                    result.Add(filtered);
                 }
             }
+
+            return result;
         }
 
-        public virtual ICommit Commit(CommitAttempt attempt)
+        public virtual async Task<ICommit> CommitAsync(CommitAttempt attempt, CancellationToken cancellationToken)
         {
             Guard.NotNull(() => attempt, attempt);
+
             foreach (var hook in _pipelineHooks)
             {
+                cancellationToken.ThrowIfCancellationRequested();
+
                 Logger.Debug(Resources.InvokingPreCommitHooks, attempt.CommitId, hook.GetType());
-                if (hook.PreCommit(attempt))
+                if (await hook.PreCommitAsync(attempt, cancellationToken).ConfigureAwait(false))
                 {
                     continue;
                 }
@@ -62,14 +82,18 @@ namespace NEventStore
                 return null;
             }
 
+            // Last chance before we attempt to commit
+            cancellationToken.ThrowIfCancellationRequested();
+
             Logger.Info(Resources.CommittingAttempt, attempt.CommitId, attempt.Events.Count);
-            ICommit commit = _persistence.Commit(attempt);
+            var commit = await _persistence.CommitAsync(attempt, cancellationToken).ConfigureAwait(false);
 
             foreach (var hook in _pipelineHooks)
             {
                 Logger.Debug(Resources.InvokingPostCommitPipelineHooks, attempt.CommitId, hook.GetType());
-                hook.PostCommit(commit);
+                await hook.PostCommitAsync(commit, cancellationToken).ConfigureAwait(false);
             }
+
             return commit;
         }
 
@@ -79,30 +103,30 @@ namespace NEventStore
             GC.SuppressFinalize(this);
         }
 
-        public virtual IEventStream CreateStream(string bucketId, string streamId)
+        public virtual Task<IEventStream> CreateStreamAsync(string bucketId, string streamId, CancellationToken cancellationToken)
         {
             Logger.Info(Resources.CreatingStream, streamId, bucketId);
-            return new OptimisticEventStream(bucketId, streamId, this);
+            return Task.FromResult<IEventStream>(new OptimisticEventStream(bucketId, streamId, this));
         }
 
-        public virtual IEventStream OpenStream(string bucketId, string streamId, int minRevision, int maxRevision)
+        public virtual Task<IEventStream> OpenStreamAsync(string bucketId, string streamId, int minRevision, int maxRevision, CancellationToken cancellationToken)
         {
             maxRevision = maxRevision <= 0 ? int.MaxValue : maxRevision;
 
             Logger.Debug(Resources.OpeningStreamAtRevision, streamId, bucketId, minRevision, maxRevision);
-            return new OptimisticEventStream(bucketId, streamId, this, minRevision, maxRevision);
+            return Task.FromResult<IEventStream>(new OptimisticEventStream(bucketId, streamId, this, minRevision, maxRevision, cancellationToken));
         }
 
-        public virtual IEventStream OpenStream(ISnapshot snapshot, int maxRevision)
+        public virtual Task<IEventStream> OpenStreamAsync(ISnapshot snapshot, int maxRevision, CancellationToken cancellationToken)
         {
             if (snapshot == null)
             {
-                throw new ArgumentNullException("snapshot");
+                throw new ArgumentNullException(nameof(snapshot));
             }
 
             Logger.Debug(Resources.OpeningStreamWithSnapshot, snapshot.StreamId, snapshot.StreamRevision, maxRevision);
             maxRevision = maxRevision <= 0 ? int.MaxValue : maxRevision;
-            return new OptimisticEventStream(snapshot, this, maxRevision);
+            return Task.FromResult<IEventStream>(new OptimisticEventStream(snapshot, this, maxRevision, cancellationToken));
         }
 
         public virtual void StartDispatchScheduler()
@@ -110,10 +134,7 @@ namespace NEventStore
             _startScheduler();
         }
 
-        public virtual IPersistStreams Advanced
-        {
-            get { return _persistence; }
-        }
+        public virtual IPersistStreams Advanced => _persistence;
 
         protected virtual void Dispose(bool disposing)
         {

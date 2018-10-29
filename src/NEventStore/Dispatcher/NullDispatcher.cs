@@ -1,6 +1,7 @@
 namespace NEventStore.Dispatcher
 {
     using System;
+    using System.Threading;
     using NEventStore.Logging;
 
     public sealed class NullDispatcher : IScheduleDispatches, IDispatchCommits
@@ -18,13 +19,13 @@ namespace NEventStore.Dispatcher
             GC.SuppressFinalize(this);
         }
 
-        public void ScheduleDispatch(ICommit commit)
+        public void ScheduleDispatch(ICommit commit, CancellationToken cancellationToken)
         {
             Logger.Info(Resources.SchedulingDispatch, commit.CommitId);
             Dispatch(commit);
         }
 
-        public void Start()
+        public void Start(CancellationToken cancellationToken)
         {
             //No-op
         }

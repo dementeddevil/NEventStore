@@ -6,7 +6,7 @@
 	{
 		public static Guid ToGuid(this string value)
 		{
-			Guid guid = Guid.Empty;
+			var guid = Guid.Empty;
 			Guid.TryParse(value, out guid);
 			return guid;
 		}

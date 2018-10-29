@@ -1,5 +1,6 @@
 namespace NEventStore
 {
+    using System.Threading;
     using System.Transactions;
     using NEventStore.Dispatcher;
     using NEventStore.Logging;
@@ -28,7 +29,7 @@ namespace NEventStore
                     c.Resolve<IPersistStreams>());
                 if (c.Resolve<DispatcherSchedulerStartup>() == DispatcherSchedulerStartup.Auto)
                 {
-                    dispatchScheduler.Start();
+                    dispatchScheduler.Start(CancellationToken.None);
                 }
                 return dispatchScheduler;
             });

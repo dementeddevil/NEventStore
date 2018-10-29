@@ -18,7 +18,7 @@ namespace CommonDomain.Core
 		{
 			if (aggregate == null)
 			{
-				throw new ArgumentNullException("aggregate");
+				throw new ArgumentNullException(nameof(aggregate));
 			}
 
 			this.regsitered = aggregate;

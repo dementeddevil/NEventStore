@@ -41,23 +41,14 @@ namespace NEventStore.Persistence.Sql
 
         string IDbConnection.ConnectionString
         {
-            get { return Current.ConnectionString; }
-            set { Current.ConnectionString = value; }
+            get => Current.ConnectionString;
+            set => Current.ConnectionString = value;
         }
 
-        int IDbConnection.ConnectionTimeout
-        {
-            get { return Current.ConnectionTimeout; }
-        }
+        int IDbConnection.ConnectionTimeout => Current.ConnectionTimeout;
 
-        string IDbConnection.Database
-        {
-            get { return Current.Database; }
-        }
+        string IDbConnection.Database => Current.Database;
 
-        ConnectionState IDbConnection.State
-        {
-            get { return Current.State; }
-        }
+        ConnectionState IDbConnection.State => Current.State;
     }
 }

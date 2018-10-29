@@ -3,6 +3,9 @@ namespace NEventStore.Persistence.Sql.SqlDialects
     using System;
     using System.Collections.Generic;
     using System.Data;
+    using System.Data.Common;
+    using System.Threading;
+    using System.Threading.Tasks;
     using System.Transactions;
     using NEventStore.Logging;
     using NEventStore.Persistence.Sql;
@@ -32,10 +35,7 @@ namespace NEventStore.Persistence.Sql.SqlDialects
 
         protected IDictionary<string, Tuple<object, DbType?>> Parameters { get; private set; }
 
-        protected ISqlDialect Dialect
-        {
-            get { return _dialect; }
-        }
+        protected ISqlDialect Dialect => _dialect;
 
         public void Dispose()
         {
@@ -51,26 +51,31 @@ namespace NEventStore.Persistence.Sql.SqlDialects
             Parameters[name] = Tuple.Create(_dialect.CoalesceParameterValue(value), parameterType);
         }
 
-        public virtual int ExecuteWithoutExceptions(string commandText)
+        public virtual Task<int> ExecuteWithoutExceptions(string commandText, CancellationToken cancellationToken)
         {
             try
             {
-                return ExecuteNonQuery(commandText);
+                return ExecuteNonQuery(commandText, cancellationToken);
             }
             catch (Exception)
             {
                 Logger.Debug(Messages.ExceptionSuppressed);
-                return 0;
+                return Task.FromResult(0);
             }
         }
 
-        public virtual int ExecuteNonQuery(string commandText)
+        public virtual Task<int> ExecuteNonQuery(string commandText, CancellationToken cancellationToken)
         {
             try
             {
-                using (IDbCommand command = BuildCommand(commandText))
+                using (var command = BuildCommand(commandText))
                 {
-                    return command.ExecuteNonQuery();
+                    if (command is DbCommand asyncCommand)
+                    {
+                        return asyncCommand.ExecuteNonQueryAsync(cancellationToken);
+                    }
+
+                    return Task.FromResult(command.ExecuteNonQuery());
                 }
             }
             catch (Exception e)
@@ -84,13 +89,18 @@ namespace NEventStore.Persistence.Sql.SqlDialects
             }
         }
 
-        public virtual object ExecuteScalar(string commandText)
+        public virtual Task<object> ExecuteScalar(string commandText, CancellationToken cancellationToken)
         {
             try
             {
-                using (IDbCommand command = BuildCommand(commandText))
+                using (var command = BuildCommand(commandText))
                 {
-                    return command.ExecuteScalar();
+                    if (command is DbCommand asyncCommand)
+                    {
+                        return asyncCommand.ExecuteScalarAsync(cancellationToken);
+                    }
+
+                    return Task.FromResult(command.ExecuteScalar());
                 }
             }
             catch (Exception e)
@@ -103,51 +113,42 @@ namespace NEventStore.Persistence.Sql.SqlDialects
             }
         }
 
-        public virtual IEnumerable<IDataRecord> ExecuteWithQuery(string queryText)
+        public virtual Task<IEnumerable<IDataRecord>> ExecuteWithQuery(string queryText, CancellationToken cancellationToken)
         {
-            return ExecuteQuery(queryText, (query, latest) => { }, InfinitePageSize);
+            return ExecuteQuery(queryText, (query, latest) => { }, InfinitePageSize, cancellationToken);
         }
 
-        public virtual IEnumerable<IDataRecord> ExecutePagedQuery(string queryText, NextPageDelegate nextpage)
+        public virtual Task<IEnumerable<IDataRecord>> ExecutePagedQuery(string queryText, NextPageDelegate nextPage, CancellationToken cancellationToken)
         {
-            int pageSize = _dialect.CanPage ? PageSize : InfinitePageSize;
+            var pageSize = _dialect.CanPage ? PageSize : InfinitePageSize;
             if (pageSize > 0)
             {
                 Logger.Verbose(Messages.MaxPageSize, pageSize);
                 Parameters.Add(_dialect.Limit, Tuple.Create((object) pageSize, (DbType?) null));
             }
 
-            return ExecuteQuery(queryText, nextpage, pageSize);
+            return ExecuteQuery(queryText, nextPage, pageSize, cancellationToken);
         }
 
         protected virtual void Dispose(bool disposing)
         {
             Logger.Verbose(Messages.DisposingStatement);
 
-            if (_transaction != null)
-            {
-                _transaction.Dispose();
-            }
+            _transaction?.Dispose();
 
-            if (_connection != null)
-            {
-                _connection.Dispose();
-            }
+            _connection?.Dispose();
 
-            if (_scope != null)
-            {
-                _scope.Dispose();
-            }
+            _scope?.Dispose();
         }
 
-        protected virtual IEnumerable<IDataRecord> ExecuteQuery(string queryText, NextPageDelegate nextpage, int pageSize)
+        protected virtual Task<IEnumerable<IDataRecord>> ExecuteQuery(string queryText, NextPageDelegate nextpage, int pageSize, CancellationToken cancellationToken)
         {
             Parameters.Add(_dialect.Skip, Tuple.Create((object) 0, (DbType?) null));
-            IDbCommand command = BuildCommand(queryText);
+            var command = BuildCommand(queryText);
 
             try
             {
-                return new PagedEnumerationCollection(_scope, _dialect, command, nextpage, pageSize, this);
+                return Task.FromResult<IEnumerable<IDataRecord>>(new PagedEnumerationCollection(_scope, _dialect, command, nextpage, pageSize, cancellationToken, this));
             }
             catch (Exception)
             {
@@ -159,7 +160,7 @@ namespace NEventStore.Persistence.Sql.SqlDialects
         protected virtual IDbCommand BuildCommand(string statement)
         {
             Logger.Verbose(Messages.CreatingCommand);
-            IDbCommand command = _connection.CreateCommand();
+            var command = _connection.CreateCommand();
             command.Transaction = _transaction;
             command.CommandText = statement;
 
@@ -181,7 +182,7 @@ namespace NEventStore.Persistence.Sql.SqlDialects
 
         protected virtual void BuildParameter(IDbCommand command, string name, object value, DbType? dbType)
         {
-            IDbDataParameter parameter = command.CreateParameter();
+            var parameter = command.CreateParameter();
             parameter.ParameterName = name;
             SetParameterValue(parameter, value, dbType);
 

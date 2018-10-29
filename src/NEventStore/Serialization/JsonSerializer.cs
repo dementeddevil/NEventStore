@@ -65,7 +65,7 @@ namespace NEventStore.Serialization
 
         protected virtual T Deserialize<T>(JsonReader reader)
         {
-            Type type = typeof (T);
+            var type = typeof (T);
 
             using (reader)
                 return (T) GetSerializer(type).Deserialize(reader, type);

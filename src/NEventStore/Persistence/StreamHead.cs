@@ -27,10 +27,7 @@ namespace NEventStore.Persistence
 
         private static readonly IEqualityComparer<StreamHead> StreamIdBucketIdComparerInstance = new StreamHeadEqualityComparer();
 
-        public static IEqualityComparer<StreamHead> StreamIdBucketIdComparer
-        {
-            get { return StreamIdBucketIdComparerInstance; }
-        }
+        public static IEqualityComparer<StreamHead> StreamIdBucketIdComparer => StreamIdBucketIdComparerInstance;
 
         /// <summary>
         ///     Initializes a new instance of the StreamHead class.

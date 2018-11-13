@@ -4,19 +4,19 @@ namespace NEventStore.Persistence.Sql
     using System.Runtime.Serialization;
 
     /// <summary>
-    ///     Indicates that a unique constraint or duplicate key violation occurred.
+    /// Indicates that a unique constraint or duplicate key violation occurred.
     /// </summary>
     [Serializable]
     public class UniqueKeyViolationException : Exception
     {
         /// <summary>
-        ///     Initializes a new instance of the UniqueKeyViolationException class.
+        /// Initializes a new instance of the UniqueKeyViolationException class.
         /// </summary>
         public UniqueKeyViolationException()
         {}
 
         /// <summary>
-        ///     Initializes a new instance of the UniqueKeyViolationException class.
+        /// Initializes a new instance of the UniqueKeyViolationException class.
         /// </summary>
         /// <param name="message">The message that describes the error.</param>
         public UniqueKeyViolationException(string message)
@@ -24,7 +24,7 @@ namespace NEventStore.Persistence.Sql
         {}
 
         /// <summary>
-        ///     Initializes a new instance of the UniqueKeyViolationException class.
+        /// Initializes a new instance of the UniqueKeyViolationException class.
         /// </summary>
         /// <param name="message">The message that describes the error.</param>
         /// <param name="innerException">The message that is the cause of the current exception.</param>
@@ -33,7 +33,7 @@ namespace NEventStore.Persistence.Sql
         {}
 
         /// <summary>
-        ///     Initializes a new instance of the UniqueKeyViolationException class.
+        /// Initializes a new instance of the UniqueKeyViolationException class.
         /// </summary>
         /// <param name="info">The SerializationInfo that holds the serialized object data of the exception being thrown.</param>
         /// <param name="context">The StreamingContext that contains contextual information about the source or destination.</param>

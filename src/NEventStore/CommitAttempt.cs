@@ -17,7 +17,7 @@ namespace NEventStore
         private readonly ICollection<EventMessage> _events;
 
         /// <summary>
-        ///     Initializes a new instance of the Commit class for the default bucket.
+        /// Initializes a new instance of the Commit class for the default bucket.
         /// </summary>
         /// <param name="streamId">The value which uniquely identifies the stream in a bucket to which the commit belongs.</param>
         /// <param name="streamRevision">The value which indicates the revision of the most recent event in the stream to which this commit applies.</param>
@@ -38,7 +38,7 @@ namespace NEventStore
         { }
 
         /// <summary>
-        ///     Initializes a new instance of the Commit class for the default bucket.
+        /// Initializes a new instance of the Commit class for the default bucket.
         /// </summary>
         /// <param name="streamId">The value which uniquely identifies the stream in a bucket to which the commit belongs.</param>
         /// <param name="streamRevision">The value which indicates the revision of the most recent event in the stream to which this commit applies.</param>
@@ -59,7 +59,7 @@ namespace NEventStore
         {}
 
         /// <summary>
-        ///     Initializes a new instance of the Commit class.
+        /// Initializes a new instance of the Commit class.
         /// </summary>
         /// <param name="bucketId">The value which identifies bucket to which the the stream and the the commit belongs</param>
         /// <param name="streamId">The value which uniquely identifies the stream in a bucket to which the commit belongs.</param>
@@ -101,42 +101,42 @@ namespace NEventStore
         }
 
         /// <summary>
-        ///     Gets the value which identifies bucket to which the the stream and the the commit belongs.
+        /// Gets the value which identifies bucket to which the the stream and the the commit belongs.
         /// </summary>
         public string BucketId => _bucketId;
 
         /// <summary>
-        ///     Gets the value which uniquely identifies the stream to which the commit belongs.
+        /// Gets the value which uniquely identifies the stream to which the commit belongs.
         /// </summary>
         public string StreamId => _streamId;
 
         /// <summary>
-        ///     Gets the value which indicates the revision of the most recent event in the stream to which this commit applies.
+        /// Gets the value which indicates the revision of the most recent event in the stream to which this commit applies.
         /// </summary>
         public int StreamRevision => _streamRevision;
 
         /// <summary>
-        ///     Gets the value which uniquely identifies the commit within the stream.
+        /// Gets the value which uniquely identifies the commit within the stream.
         /// </summary>
         public Guid CommitId => _commitId;
 
         /// <summary>
-        ///     Gets the value which indicates the sequence (or position) in the stream to which this commit applies.
+        /// Gets the value which indicates the sequence (or position) in the stream to which this commit applies.
         /// </summary>
         public int CommitSequence => _commitSequence;
 
         /// <summary>
-        ///     Gets the point in time at which the commit was persisted.
+        /// Gets the point in time at which the commit was persisted.
         /// </summary>
         public DateTime CommitStamp => _commitStamp;
 
         /// <summary>
-        ///     Gets the metadata which provides additional, unstructured information about this commit.
+        /// Gets the metadata which provides additional, unstructured information about this commit.
         /// </summary>
         public IDictionary<string, object> Headers => _headers;
 
         /// <summary>
-        ///     Gets the collection of event messages to be committed as a single unit.
+        /// Gets the collection of event messages to be committed as a single unit.
         /// </summary>
         public ICollection<EventMessage> Events => _events;
     }

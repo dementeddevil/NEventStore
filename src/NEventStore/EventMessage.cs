@@ -5,14 +5,14 @@
     using System.Runtime.Serialization;
 
     /// <summary>
-    ///     Represents a single element in a stream of events.
+    /// Represents a single element in a stream of events.
     /// </summary>
     [Serializable]
     [DataContract]
     public class EventMessage
     {
         /// <summary>
-        ///     Initializes a new instance of the EventMessage class.
+        /// Initializes a new instance of the EventMessage class.
         /// </summary>
         public EventMessage()
         {
@@ -20,13 +20,13 @@
         }
 
         /// <summary>
-        ///     Gets the metadata which provides additional, unstructured information about this message.
+        /// Gets the metadata which provides additional, unstructured information about this message.
         /// </summary>
         [DataMember]
         public Dictionary<string, object> Headers { get; set; }
 
         /// <summary>
-        ///     Gets or sets the actual event message body.
+        /// Gets or sets the actual event message body.
         /// </summary>
         [DataMember]
         public object Body { get; set; }

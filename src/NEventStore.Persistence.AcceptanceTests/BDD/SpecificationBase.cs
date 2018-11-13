@@ -1,9 +1,8 @@
-﻿using System.Threading.Tasks;
+﻿using System;
+using System.Threading.Tasks;
 
 namespace NEventStore.Persistence.AcceptanceTests.BDD
 {
-    using System;
-
     public abstract class SpecificationBase
     {
         public async Task Execute(Func<Task> actionMethod)

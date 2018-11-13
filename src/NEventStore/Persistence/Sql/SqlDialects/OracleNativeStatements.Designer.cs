@@ -78,13 +78,13 @@ namespace NEventStore.Persistence.Sql.SqlDialects {
         ///	(
         ///    SELECT * FROM COMMITS 
         ///    WHERE	BucketId = :BucketId AND StreamId = :StreamId
-        ///      AND	(StreamRevision - Items) &lt;= :StreamRevision
+        ///  AND	(StreamRevision - Items) &lt;= :StreamRevision
         ///	)
         /// AND NOT EXISTS
         ///	(
         ///    SELECT * FROM SNAPSHOTS 
         ///    WHERE	BucketId = :BucketId AND StreamId = :StreamId
-        ///      And	Streamrevision = :Streamrevision
+        ///  And	Streamrevision = :Streamrevision
         ///	).
         /// </summary>
         internal static string AppendSnapshotToCommit {
@@ -217,10 +217,10 @@ namespace NEventStore.Persistence.Sql.SqlDialects {
         ///IF table_count = 0 THEN DBMS_OUTPUT.PUT_LINE (&apos;Creating the Commits table&apos;);
         ///  EXECUTE IMMEDIATE (
         ///   &apos;CREATE TABLE Commits(
-        ///      BucketId varchar2(40) NOT NULL,
-        ///      StreamId char(40) NOT NULL,
-        ///      StreamIdOriginal nvarchar2(1000) NOT NULL,
-        ///      StreamRevisio [rest of string was truncated]&quot;;.
+        ///  BucketId varchar2(40) NOT NULL,
+        ///  StreamId char(40) NOT NULL,
+        ///  StreamIdOriginal nvarchar2(1000) NOT NULL,
+        ///  StreamRevisio [rest of string was truncated]&quot;;.
         /// </summary>
         internal static string InitializeStorage {
             get {
@@ -261,8 +261,8 @@ namespace NEventStore.Persistence.Sql.SqlDialects {
         ///   Looks up a localized string similar to /*PagedQueryFormat*/
         ///SELECT *
         ///FROM ( {0},
-        ///       ROW_NUMBER() OVER({1}) AS ROW_NUMBER_VAL
-        ///       {2}
+        ///   ROW_NUMBER() OVER({1}) AS ROW_NUMBER_VAL
+        ///   {2}
         ///) PagedQueryFormat
         ///WHERE ROW_NUMBER_VAL &gt; :Skip AND ROW_NUMBER_VAL &lt;= (:Limit + :Skip).
         /// </summary>

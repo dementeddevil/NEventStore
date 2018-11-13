@@ -6,10 +6,10 @@ using NEventStore.Persistence;
 namespace NEventStore
 {
     /// <summary>
-    ///     Indicates the ability to commit events and access events to and from a given stream.
+    /// Indicates the ability to commit events and access events to and from a given stream.
     /// </summary>
     /// <remarks>
-    ///     Instances of this class must be designed to be multi-thread safe such that they can be shared between threads.
+    /// Instances of this class must be designed to be multi-thread safe such that they can be shared between threads.
     /// </remarks>
     public interface ICommitEvents
     {

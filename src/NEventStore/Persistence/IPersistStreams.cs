@@ -6,20 +6,20 @@ namespace NEventStore.Persistence
     using System.Threading.Tasks;
 
     /// <summary>
-    ///     Indicates the ability to adapt the underlying persistence infrastructure to behave like a stream of events.
+    /// Indicates the ability to adapt the underlying persistence infrastructure to behave like a stream of events.
     /// </summary>
     /// <remarks>
-    ///     Instances of this class must be designed to be multi-thread safe such that they can be shared between threads.
+    /// Instances of this class must be designed to be multi-thread safe such that they can be shared between threads.
     /// </remarks>
     public interface IPersistStreams : IDisposable, ICommitEvents, IAccessSnapshots
     {
         /// <summary>
-        ///     Gets a value indicating whether this instance has been disposed of.
+        /// Gets a value indicating whether this instance has been disposed of.
         /// </summary>
         bool IsDisposed { get; }
 
         /// <summary>
-        ///     Initializes and prepares the storage for use, if not already performed.
+        /// Initializes and prepares the storage for use, if not already performed.
         /// </summary>
         /// <param name="cancellationToken">The cancellation token.</param>
         /// <exception cref="StorageException" />
@@ -27,7 +27,7 @@ namespace NEventStore.Persistence
         Task InitializeAsync(CancellationToken cancellationToken);
 
         /// <summary>
-        ///     Gets all commits on or after from the specified starting time.
+        /// Gets all commits on or after from the specified starting time.
         /// </summary>
         /// <param name="bucketId">The value which uniquely identifies bucket the stream belongs to.</param>
         /// <param name="start">The point in time at which to start.</param>
@@ -38,7 +38,7 @@ namespace NEventStore.Persistence
         Task<IEnumerable<ICommit>> GetFromAsync(string bucketId, DateTime start, CancellationToken cancellationToken);
 
         /// <summary>
-        ///     Gets all commits after from the specified checkpoint. Use null to get from the beginning.
+        /// Gets all commits after from the specified checkpoint. Use null to get from the beginning.
         /// </summary>
         /// <param name="cancellationToken">The cancellation token.</param>
         /// <param name="checkpointToken">The checkpoint token.</param>
@@ -54,7 +54,7 @@ namespace NEventStore.Persistence
         Task<ICheckpoint> GetCheckpointAsync(CancellationToken cancellationToken, string checkpointToken = null);
 
         /// <summary>
-        ///     Gets all commits on or after from the specified starting time and before the specified end time.
+        /// Gets all commits on or after from the specified starting time and before the specified end time.
         /// </summary>
         /// <param name="bucketId">The value which uniquely identifies bucket the stream belongs to.</param>
         /// <param name="start">The point in time at which to start.</param>
@@ -66,7 +66,7 @@ namespace NEventStore.Persistence
         Task<IEnumerable<ICommit>> GetFromToAsync(string bucketId, DateTime start, DateTime end, CancellationToken cancellationToken);
 
         /// <summary>
-        ///     Gets a set of commits that has not yet been dispatched.
+        /// Gets a set of commits that has not yet been dispatched.
         /// </summary>
         /// <param name="cancellationToken">The cancellation token.</param>
         /// <returns>The set of commits to be dispatched.</returns>
@@ -75,7 +75,7 @@ namespace NEventStore.Persistence
         Task<IEnumerable<ICommit>> GetUndispatchedCommitsAsync(CancellationToken cancellationToken);
 
         /// <summary>
-        ///     Marks the commit specified as dispatched.
+        /// Marks the commit specified as dispatched.
         /// </summary>
         /// <param name="commit">The commit to be marked as dispatched.</param>
         /// <param name="cancellationToken">The cancellation token.</param>

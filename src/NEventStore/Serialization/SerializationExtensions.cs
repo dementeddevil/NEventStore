@@ -3,12 +3,12 @@ namespace NEventStore.Serialization
     using System.IO;
 
     /// <summary>
-    ///     Implements extension methods that make call to the serialization infrastructure more simple.
+    /// Implements extension methods that make call to the serialization infrastructure more simple.
     /// </summary>
     public static class SerializationExtensions
     {
         /// <summary>
-        ///     Serializes the object provided.
+        /// Serializes the object provided.
         /// </summary>
         /// <typeparam name="T">The type of object to be serialized</typeparam>
         /// <param name="serializer">The serializer to use.</param>
@@ -24,7 +24,7 @@ namespace NEventStore.Serialization
         }
 
         /// <summary>
-        ///     Deserializes the array of bytes provided.
+        /// Deserializes the array of bytes provided.
         /// </summary>
         /// <typeparam name="T">The type of object to be deserialized.</typeparam>
         /// <param name="serializer">The serializer to use.</param>

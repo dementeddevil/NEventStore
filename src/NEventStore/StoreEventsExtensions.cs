@@ -8,7 +8,7 @@ namespace NEventStore
     public static class StoreEventsExtensions
     {
         /// <summary>
-        ///     Creates a new stream.
+        /// Creates a new stream.
         /// </summary>
         /// <param name="storeEvents">The store events instance.</param>
         /// <param name="streamId">The value which uniquely identifies the stream to be created.</param>
@@ -20,7 +20,7 @@ namespace NEventStore
         }
 
         /// <summary>
-        ///     Creates a new stream.
+        /// Creates a new stream.
         /// </summary>
         /// <param name="storeEvents">The store events instance.</param>
         /// <param name="streamId">The value which uniquely identifies the stream to be created.</param>
@@ -33,7 +33,7 @@ namespace NEventStore
         }
 
         /// <summary>
-        ///     Creates a new stream.
+        /// Creates a new stream.
         /// </summary>
         /// <param name="storeEvents">The store events instance.</param>
         /// <param name="bucketId">The value which uniquely identifies bucket the stream belongs to.</param>
@@ -47,8 +47,8 @@ namespace NEventStore
         }
 
         /// <summary>
-        ///     Reads the stream indicated from the minimum revision specified up to the maximum revision specified or creates
-        ///     an empty stream if no commits are found and a minimum revision of zero is provided.
+        /// Reads the stream indicated from the minimum revision specified up to the maximum revision specified or creates
+        /// an empty stream if no commits are found and a minimum revision of zero is provided.
         /// </summary>
         /// <param name="storeEvents">The store events instance.</param>
         /// <param name="streamId">The value which uniquely identifies the stream from which the events will be read.</param>
@@ -65,8 +65,8 @@ namespace NEventStore
         }
 
         /// <summary>
-        ///     Reads the stream indicated from the minimum revision specified up to the maximum revision specified or creates
-        ///     an empty stream if no commits are found and a minimum revision of zero is provided.
+        /// Reads the stream indicated from the minimum revision specified up to the maximum revision specified or creates
+        /// an empty stream if no commits are found and a minimum revision of zero is provided.
         /// </summary>
         /// <param name="storeEvents">The store events instance.</param>
         /// <param name="streamId">The value which uniquely identifies the stream from which the events will be read.</param>
@@ -84,8 +84,8 @@ namespace NEventStore
         }
 
         /// <summary>
-        ///     Reads the stream indicated from the minimum revision specified up to the maximum revision specified or creates
-        ///     an empty stream if no commits are found and a minimum revision of zero is provided.
+        /// Reads the stream indicated from the minimum revision specified up to the maximum revision specified or creates
+        /// an empty stream if no commits are found and a minimum revision of zero is provided.
         /// </summary>
         /// <param name="storeEvents">The store events instance.</param>
         /// <param name="bucketId">The value which uniquely identifies bucket the stream belongs to.</param>

@@ -3,12 +3,12 @@ namespace NEventStore.Logging
     using System;
 
     /// <summary>
-    ///     Provides the ability to get a new instance of the configured logger.
+    /// Provides the ability to get a new instance of the configured logger.
     /// </summary>
     public static class LogFactory
     {
         /// <summary>
-        ///     Initializes static members of the LogFactory class.
+        /// Initializes static members of the LogFactory class.
         /// </summary>
         static LogFactory()
         {
@@ -17,7 +17,7 @@ namespace NEventStore.Logging
         }
 
         /// <summary>
-        ///     Gets or sets the log builder of the configured logger.  This should be invoked to return a new logging instance.
+        /// Gets or sets the log builder of the configured logger.  This should be invoked to return a new logging instance.
         /// </summary>
         public static Func<Type, ILog> BuildLogger { get; set; }
 

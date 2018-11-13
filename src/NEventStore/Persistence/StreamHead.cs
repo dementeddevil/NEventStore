@@ -3,12 +3,12 @@ namespace NEventStore.Persistence
     using System.Collections.Generic;
 
     /// <summary>
-    ///     Indicates the most recent information representing the head of a given stream.
+    /// Indicates the most recent information representing the head of a given stream.
     /// </summary>
     public class StreamHead : IStreamHead
     {
         /// <summary>
-        ///     Initializes a new instance of the StreamHead class.
+        /// Initializes a new instance of the StreamHead class.
         /// </summary>
         /// <param name="bucketId">The value which uniquely identifies bucket the stream belongs to.</param>
         /// <param name="streamId">The value which uniquely identifies the stream in the bucket where the last snapshot exceeds the allowed threshold.</param>
@@ -23,40 +23,36 @@ namespace NEventStore.Persistence
             SnapshotRevision = snapshotRevision;
         }
 
-        
-
-        private static readonly IEqualityComparer<StreamHead> StreamIdBucketIdComparerInstance = new StreamHeadEqualityComparer();
-
-        public static IEqualityComparer<StreamHead> StreamIdBucketIdComparer => StreamIdBucketIdComparerInstance;
-
         /// <summary>
-        ///     Initializes a new instance of the StreamHead class.
+        /// Initializes a new instance of the StreamHead class.
         /// </summary>
         protected StreamHead()
         {}
 
-        /// <summary>
-        ///     Gets the value which uniquely identifies the stream where the last snapshot exceeds the allowed threshold.
-        /// </summary>
-        public string BucketId { get; private set; }
+        public static IEqualityComparer<StreamHead> StreamIdBucketIdComparer { get; } = new StreamHeadEqualityComparer();
 
         /// <summary>
-        ///     Gets the value which uniquely identifies the stream where the last snapshot exceeds the allowed threshold.
+        /// Gets the value which uniquely identifies the stream where the last snapshot exceeds the allowed threshold.
         /// </summary>
-        public string StreamId { get; private set; }
+        public string BucketId { get; }
 
         /// <summary>
-        ///     Gets the value which indicates the revision, length, or number of events committed to the stream.
+        /// Gets the value which uniquely identifies the stream where the last snapshot exceeds the allowed threshold.
         /// </summary>
-        public int HeadRevision { get; private set; }
+        public string StreamId { get; }
 
         /// <summary>
-        ///     Gets the value which indicates the revision at which the last snapshot was taken.
+        /// Gets the value which indicates the revision, length, or number of events committed to the stream.
         /// </summary>
-        public int SnapshotRevision { get; private set; }
+        public int HeadRevision { get; }
 
         /// <summary>
-        ///     Determines whether the specified object is equal to the current object.
+        /// Gets the value which indicates the revision at which the last snapshot was taken.
+        /// </summary>
+        public int SnapshotRevision { get; }
+
+        /// <summary>
+        /// Determines whether the specified object is equal to the current object.
         /// </summary>
         /// <param name="obj">The object to compare with the current object.</param>
         /// <returns>If the two objects are equal, returns true; otherwise false.</returns>
@@ -67,7 +63,7 @@ namespace NEventStore.Persistence
         }
 
         /// <summary>
-        ///     Returns the hash code for this instance.
+        /// Returns the hash code for this instance.
         /// </summary>
         /// <returns>The hash code for this instance.</returns>
         public override int GetHashCode()

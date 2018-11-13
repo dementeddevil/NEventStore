@@ -68,16 +68,16 @@ namespace NEventStore.Persistence.Sql.SqlDialects {
         /// /*FROM DUAL*/
         ///WHERE EXISTS
         /// ( SELECT *
-        ///     FROM Commits
+        /// FROM Commits
         ///    WHERE BucketId = @BucketId
-        ///      AND StreamId = @StreamId
-        ///      AND (StreamRevision - Items) &lt;= @StreamRevision )
+        ///  AND StreamId = @StreamId
+        ///  AND (StreamRevision - Items) &lt;= @StreamRevision )
         ///AND NOT EXISTS
         /// ( SELECT *
-        ///     FROM Snapshots
+        /// FROM Snapshots
         ///    WHERE BucketId = @BucketId
-        ///      AND StreamId = @StreamId
-        ///      AND StreamRevision = @StreamRevision );.
+        ///  AND StreamId = @StreamId
+        ///  AND StreamRevision = @StreamRevision );.
         /// </summary>
         internal static string AppendSnapshotToCommit {
             get {

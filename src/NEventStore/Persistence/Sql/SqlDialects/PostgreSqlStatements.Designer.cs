@@ -85,7 +85,7 @@ namespace NEventStore.Persistence.Sql.SqlDialects {
         /// <summary>
         ///   Looks up a localized string similar to INSERT
         ///  INTO Commits
-        ///     ( BucketId, StreamId, StreamIdOriginal, CommitId, CommitSequence, StreamRevision, Items, CommitStamp, Headers, Payload )
+        /// ( BucketId, StreamId, StreamIdOriginal, CommitId, CommitSequence, StreamRevision, Items, CommitStamp, Headers, Payload )
         ///VALUES (@BucketId, @StreamId, @StreamIdOriginal, @CommitId, @CommitSequence, @StreamRevision, @Items, @CommitStamp, @Headers, @Payload)
         ///RETURNING CheckpointNumber;.
         /// </summary>

@@ -14,11 +14,9 @@ namespace NEventStore
     {
         private static readonly ILog Logger = LogFactory.BuildLogger(typeof (OptimisticEventStream));
         private readonly ICollection<EventMessage> _committed = new LinkedList<EventMessage>();
-        private readonly IDictionary<string, object> _committedHeaders = new Dictionary<string, object>();
         private readonly ICollection<EventMessage> _events = new LinkedList<EventMessage>();
         private readonly ICollection<Guid> _identifiers = new HashSet<Guid>();
         private readonly ICommitEvents _persistence;
-        private readonly IDictionary<string, object> _uncommittedHeaders = new Dictionary<string, object>();
         private bool _disposed;
 
         public OptimisticEventStream(string bucketId, string streamId, ICommitEvents persistence)
@@ -31,7 +29,7 @@ namespace NEventStore
         public OptimisticEventStream(string bucketId, string streamId, ICommitEvents persistence, int minRevision, int maxRevision, CancellationToken cancellationToken)
             : this(bucketId, streamId, persistence)
         {
-            IEnumerable<ICommit> commits = persistence
+            var commits = persistence
                 .GetFromAsync(bucketId, streamId, minRevision, maxRevision, cancellationToken)
                 .GetAwaiter().GetResult();
             PopulateStream(minRevision, maxRevision, commits);
@@ -45,7 +43,7 @@ namespace NEventStore
         public OptimisticEventStream(ISnapshot snapshot, ICommitEvents persistence, int maxRevision, CancellationToken cancellationToken)
             : this(snapshot.BucketId, snapshot.StreamId, persistence)
         {
-            IEnumerable<ICommit> commits = persistence
+            var commits = persistence
                 .GetFromAsync(snapshot.BucketId, snapshot.StreamId, snapshot.StreamRevision, maxRevision, cancellationToken)
                 .GetAwaiter().GetResult();
             PopulateStream(snapshot.StreamRevision + 1, maxRevision, commits);
@@ -62,11 +60,11 @@ namespace NEventStore
 
         public ICollection<EventMessage> CommittedEvents => new ImmutableCollection<EventMessage>(_committed);
 
-        public IDictionary<string, object> CommittedHeaders => _committedHeaders;
+        public IDictionary<string, object> CommittedHeaders { get; } = new Dictionary<string, object>();
 
         public ICollection<EventMessage> UncommittedEvents => new ImmutableCollection<EventMessage>(_events);
 
-        public IDictionary<string, object> UncommittedHeaders => _uncommittedHeaders;
+        public IDictionary<string, object> UncommittedHeaders { get; } = new Dictionary<string, object>();
 
         public void Add(EventMessage uncommittedEvent)
         {
@@ -113,7 +111,7 @@ namespace NEventStore
         {
             Logger.Debug(Resources.ClearingUncommittedChanges, StreamId);
             _events.Clear();
-            _uncommittedHeaders.Clear();
+            UncommittedHeaders.Clear();
         }
 
         private void PopulateStream(int minRevision, int maxRevision, IEnumerable<ICommit> commits)
@@ -139,7 +137,7 @@ namespace NEventStore
         {
             foreach (var key in commit.Headers.Keys)
             {
-                _committedHeaders[key] = commit.Headers[key];
+                CommittedHeaders[key] = commit.Headers[key];
             }
         }
 
@@ -203,7 +201,7 @@ namespace NEventStore
                 commitId,
                 CommitSequence + 1,
                 SystemTime.UtcNow,
-                _uncommittedHeaders.ToDictionary(x => x.Key, x => x.Value),
+                UncommittedHeaders.ToDictionary(x => x.Key, x => x.Value),
                 _events.ToList());
         }
 

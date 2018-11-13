@@ -65,13 +65,13 @@ namespace NEventStore.Persistence.Sql.SqlDialects {
         ///
         ///CREATE TABLE [dbo].[Commits]
         ///(
-        ///       [BucketId] [varchar](40) NOT NULL,
-        ///       [StreamId] [char](40) NOT NULL,
-        ///       [StreamIdOriginal] [nvarchar](1000) NOT NULL,
-        ///       [StreamRevision] [int] NOT NULL CHECK ([StreamRevision] &gt; 0),
-        ///       [Items] [tinyint] NOT NULL CHECK ([Items] &gt; 0),
-        ///       [CommitId] [uniqueidentifier] NOT NULL CHECK ([CommitId] != 0x0),
-        ///       [CommitSequence] [int] NOT NULL CHECK ([CommitSeque [rest of string was truncated]&quot;;.
+        ///   [BucketId] [varchar](40) NOT NULL,
+        ///   [StreamId] [char](40) NOT NULL,
+        ///   [StreamIdOriginal] [nvarchar](1000) NOT NULL,
+        ///   [StreamRevision] [int] NOT NULL CHECK ([StreamRevision] &gt; 0),
+        ///   [Items] [tinyint] NOT NULL CHECK ([Items] &gt; 0),
+        ///   [CommitId] [uniqueidentifier] NOT NULL CHECK ([CommitId] != 0x0),
+        ///   [CommitSequence] [int] NOT NULL CHECK ([CommitSeque [rest of string was truncated]&quot;;.
         /// </summary>
         internal static string InitializeStorage {
             get {
@@ -86,7 +86,7 @@ namespace NEventStore.Persistence.Sql.SqlDialects {
         ///SELECT *
         ///  FROM [cte]
         /// WHERE [row] BETWEEN @Skip + 1
-        ///                 AND @Limit + @Skip;.
+        ///             AND @Limit + @Skip;.
         /// </summary>
         internal static string PagedQueryFormat {
             get {
@@ -97,7 +97,7 @@ namespace NEventStore.Persistence.Sql.SqlDialects {
         /// <summary>
         ///   Looks up a localized string similar to INSERT
         ///  INTO Commits
-        ///     ( BucketId, StreamId, StreamIdOriginal, CommitId, CommitSequence, StreamRevision, Items, CommitStamp, Headers, Payload )
+        /// ( BucketId, StreamId, StreamIdOriginal, CommitId, CommitSequence, StreamRevision, Items, CommitStamp, Headers, Payload )
         ///OUTPUT INSERTED.CheckpointNumber
         ///VALUES (@BucketId, @StreamId, @StreamIdOriginal, @CommitId, @CommitSequence, @StreamRevision, @Items, @CommitStamp, @Headers, @Payload);.
         /// </summary>

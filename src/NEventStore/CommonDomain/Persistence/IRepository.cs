@@ -1,10 +1,10 @@
-namespace CommonDomain.Persistence
-{
-	using System;
-	using System.Collections.Generic;
-	using System.Threading;
-	using System.Threading.Tasks;
+using System;
+using System.Collections.Generic;
+using System.Threading;
+using System.Threading.Tasks;
 
+namespace NEventStore.CommonDomain.Persistence
+{
     public interface IRepository : IDisposable
 	{
 	    Task<TAggregate> GetByIdAsync<TAggregate>(Guid id, CancellationToken cancellationToken) where TAggregate : class, IAggregate;

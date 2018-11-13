@@ -1,6 +1,6 @@
 ﻿using System;
 
-namespace CommonDomain.Persistence
+namespace NEventStore.CommonDomain.Persistence
 {
     /// <summary>
     /// Interface for factories that construct Sagas.

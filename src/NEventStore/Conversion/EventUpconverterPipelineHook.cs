@@ -1,13 +1,13 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
+using NEventStore.Logging;
+using NEventStore.Persistence;
+
 namespace NEventStore.Conversion
 {
-    using System;
-    using System.Collections.Generic;
-    using System.Linq;
-    using System.Threading;
-    using System.Threading.Tasks;
-    using NEventStore.Logging;
-    using NEventStore.Persistence;
-
     public class EventUpconverterPipelineHook : PipelineHookBase
     {
         private static readonly ILog Logger = LogFactory.BuildLogger(typeof (EventUpconverterPipelineHook));
@@ -15,12 +15,7 @@ namespace NEventStore.Conversion
 
         public EventUpconverterPipelineHook(IDictionary<Type, Func<object, object>> converters)
         {
-            if (converters == null)
-            {
-                throw new ArgumentNullException(nameof(converters));
-            }
-
-            _converters = converters;
+            _converters = converters ?? throw new ArgumentNullException(nameof(converters));
         }
 
         public override void Dispose()

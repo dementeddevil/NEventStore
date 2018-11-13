@@ -1,13 +1,12 @@
-﻿namespace CommonDomain
-{
-	using System;
+﻿using System;
 
-	internal static class StringExtensions
+namespace NEventStore.CommonDomain
+{
+    internal static class StringExtensions
 	{
 		public static Guid ToGuid(this string value)
 		{
-			var guid = Guid.Empty;
-			Guid.TryParse(value, out guid);
+		    Guid.TryParse(value, out var guid);
 			return guid;
 		}
 	}

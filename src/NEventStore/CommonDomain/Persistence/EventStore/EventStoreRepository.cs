@@ -1,25 +1,19 @@
-namespace CommonDomain.Persistence.EventStore
-{
-	using System;
-	using System.Collections.Generic;
-	using System.Linq;
-	using System.Threading;
-	using System.Threading.Tasks;
-	using NEventStore;
-	using NEventStore.Persistence;
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
+using NEventStore.Persistence;
 
-	public class EventStoreRepository : IRepository, IDisposable
+namespace NEventStore.CommonDomain.Persistence.EventStore
+{
+    public class EventStoreRepository : IRepository, IDisposable
 	{
 		private const string AggregateTypeHeader = "AggregateType";
-
 		private readonly IDetectConflicts _conflictDetector;
-
 		private readonly IStoreEvents _eventStore;
-
 		private readonly IConstructAggregates _factory;
-
 		private readonly IDictionary<string, ISnapshot> _snapshots = new Dictionary<string, ISnapshot>();
-
 		private readonly IDictionary<string, IEventStream> _streams = new Dictionary<string, IEventStream>();
 
 		public EventStoreRepository(IStoreEvents eventStore, IConstructAggregates factory, IDetectConflicts conflictDetector)

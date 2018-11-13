@@ -5,7 +5,7 @@
     /// </summary>
     /// <typeparam name="TSource">The source event type from which to convert.</typeparam>
     /// <typeparam name="TTarget">The target event type.</typeparam>
-    public interface IUpconvertEvents<TSource, TTarget>
+    public interface IUpconvertEvents<in TSource, out TTarget>
         where TSource : class
         where TTarget : class
     {

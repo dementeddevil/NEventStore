@@ -1,15 +1,15 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Reflection;
+using NEventStore.Conversion;
+using NEventStore.Logging;
+
 namespace NEventStore
 {
-    using System;
-    using System.Collections.Generic;
-    using System.Linq;
-    using System.Reflection;
-    using NEventStore.Conversion;
-    using NEventStore.Logging;
-
     public class EventUpconverterWireup : Wireup
     {
-        private static readonly ILog Logger = LogFactory.BuildLogger(typeof (EventUpconverterWireup));
+        private static readonly ILog Logger = LogFactory.BuildLogger(typeof(EventUpconverterWireup));
         private readonly List<Assembly> _assembliesToScan = new List<Assembly>();
         private readonly IDictionary<Type, Func<object, object>> _registered = new Dictionary<Type, Func<object, object>>();
 
@@ -39,21 +39,22 @@ namespace NEventStore
             return Assembly.GetCallingAssembly()
                            .GetReferencedAssemblies()
                            .Select(Assembly.Load)
-                           .Concat(new[] {Assembly.GetCallingAssembly()});
+                           .Concat(new[] { Assembly.GetCallingAssembly() });
         }
 
         private static IDictionary<Type, Func<object, object>> GetConverters(IEnumerable<Assembly> toScan)
         {
-            var c = from a in toScan
-                                                                      from t in a.GetTypes()
-                                                                      where !t.IsAbstract
-                                                                      let i = t.GetInterface(typeof (IUpconvertEvents<,>).FullName)
-                                                                      where i != null
-                                                                      let sourceType = i.GetGenericArguments().First()
-                                                                      let convertMethod = i.GetMethods(BindingFlags.Public | BindingFlags.Instance).First()
-                                                                      let instance = Activator.CreateInstance(t)
-                                                                      select new KeyValuePair<Type, Func<object, object>>(
-                                                                          sourceType, e => convertMethod.Invoke(instance, new[] {e}));
+            var c =
+                from a in toScan
+                from t in a.GetTypes()
+                where !t.IsAbstract
+                let i = t.GetInterface(typeof(IUpconvertEvents<,>).FullName)
+                where i != null
+                let sourceType = i.GetGenericArguments().First()
+                let convertMethod = i.GetMethods(BindingFlags.Public | BindingFlags.Instance).First()
+                let instance = Activator.CreateInstance(t)
+                select new KeyValuePair<Type, Func<object, object>>(
+                    sourceType, e => convertMethod.Invoke(instance, new[] { e }));
             try
             {
                 return c.ToDictionary(x => x.Key, x => x.Value);
@@ -89,7 +90,7 @@ namespace NEventStore
                 throw new ArgumentNullException(nameof(converter));
             }
 
-            _registered[typeof (TSource)] = @event => converter.Convert(@event as TSource);
+            _registered[typeof(TSource)] = @event => converter.Convert(@event as TSource);
 
             return this;
         }

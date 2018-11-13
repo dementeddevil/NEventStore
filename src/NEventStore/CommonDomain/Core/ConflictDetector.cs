@@ -1,10 +1,10 @@
-namespace CommonDomain.Core
-{
-	using System;
-	using System.Collections.Generic;
-	using System.Linq;
+using System;
+using System.Collections.Generic;
+using System.Linq;
 
-	/// <summary>
+namespace NEventStore.CommonDomain.Core
+{
+    /// <summary>
 	///   The conflict detector is used to determine if the events to be committed represent
 	///   a true business conflict as compared to events that have already been committed, thus
 	///   allowing reconciliation of optimistic concurrency problems.
@@ -15,16 +15,15 @@ namespace CommonDomain.Core
 	/// </remarks>
 	public class ConflictDetector : IDetectConflicts
 	{
-		private readonly IDictionary<Type, IDictionary<Type, ConflictDelegate>> actions =
+		private readonly IDictionary<Type, IDictionary<Type, ConflictDelegate>> _actions =
 			new Dictionary<Type, IDictionary<Type, ConflictDelegate>>();
 
 		public void Register<TUncommitted, TCommitted>(ConflictDelegate handler) where TUncommitted : class
 			where TCommitted : class
 		{
-			IDictionary<Type, ConflictDelegate> inner;
-			if (!this.actions.TryGetValue(typeof(TUncommitted), out inner))
+		    if (!_actions.TryGetValue(typeof(TUncommitted), out var inner))
 			{
-				this.actions[typeof(TUncommitted)] = inner = new Dictionary<Type, ConflictDelegate>();
+				_actions[typeof(TUncommitted)] = inner = new Dictionary<Type, ConflictDelegate>();
 			}
 
 			inner[typeof(TCommitted)] = (uncommitted, committed) => handler(uncommitted as TUncommitted, committed as TCommitted);
@@ -34,20 +33,18 @@ namespace CommonDomain.Core
 		{
 			return (from object uncommitted in uncommittedEvents
 			        from object committed in committedEvents
-			        where this.Conflicts(uncommitted, committed)
+			        where Conflicts(uncommitted, committed)
 			        select uncommittedEvents).Any();
 		}
 
 		private bool Conflicts(object uncommitted, object committed)
 		{
-			IDictionary<Type, ConflictDelegate> registration;
-			if (!this.actions.TryGetValue(uncommitted.GetType(), out registration))
+		    if (!_actions.TryGetValue(uncommitted.GetType(), out var registration))
 			{
 				return uncommitted.GetType() == committed.GetType(); // no reg, only conflict if the events are the same time
 			}
 
-			ConflictDelegate callback;
-			if (!registration.TryGetValue(committed.GetType(), out callback))
+		    if (!registration.TryGetValue(committed.GetType(), out var callback))
 			{
 				return true;
 			}

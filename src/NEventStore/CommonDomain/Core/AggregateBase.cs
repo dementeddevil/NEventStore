@@ -1,14 +1,13 @@
-namespace CommonDomain.Core
+using System;
+using System.Collections;
+using System.Collections.Generic;
+
+namespace NEventStore.CommonDomain.Core
 {
-	using System;
-	using System.Collections;
-	using System.Collections.Generic;
-
-	public abstract class AggregateBase : IAggregate, IEquatable<IAggregate>
+    public abstract class AggregateBase : IAggregate, IEquatable<IAggregate>
 	{
-		private readonly ICollection<object> uncommittedEvents = new LinkedList<object>();
-
-		private IRouteEvents registeredRoutes;
+		private readonly ICollection<object> _uncommittedEvents = new LinkedList<object>();
+		private IRouteEvents _registeredRoutes;
 
 		protected AggregateBase()
 			: this(null)
@@ -21,22 +20,14 @@ namespace CommonDomain.Core
 				return;
 			}
 
-			this.RegisteredRoutes = handler;
-			this.RegisteredRoutes.Register(this);
+			RegisteredRoutes = handler;
+			RegisteredRoutes.Register(this);
 		}
 
 		protected IRouteEvents RegisteredRoutes
 		{
-			get => this.registeredRoutes ?? (this.registeredRoutes = new ConventionEventRouter(true, this));
-		    set
-			{
-				if (value == null)
-				{
-					throw new InvalidOperationException("AggregateBase must have an event router to function");
-				}
-
-				this.registeredRoutes = value;
-			}
+			get => _registeredRoutes ?? (_registeredRoutes = new ConventionEventRouter(true, this));
+		    set => _registeredRoutes = value ?? throw new InvalidOperationException("AggregateBase must have an event router to function");
 		}
 
 		public Guid Id { get; protected set; }
@@ -45,42 +36,42 @@ namespace CommonDomain.Core
 
 		void IAggregate.ApplyEvent(object @event)
 		{
-			this.RegisteredRoutes.Dispatch(@event);
-			this.Version++;
+			RegisteredRoutes.Dispatch(@event);
+			Version++;
 		}
 
 		ICollection IAggregate.GetUncommittedEvents()
 		{
-			return (ICollection)this.uncommittedEvents;
+			return (ICollection)_uncommittedEvents;
 		}
 
 		void IAggregate.ClearUncommittedEvents()
 		{
-			this.uncommittedEvents.Clear();
+			_uncommittedEvents.Clear();
 		}
 
 		IMemento IAggregate.GetSnapshot()
 		{
-			var snapshot = this.GetSnapshot();
-			snapshot.Id = this.Id;
-			snapshot.Version = this.Version;
+			var snapshot = GetSnapshot();
+			snapshot.Id = Id;
+			snapshot.Version = Version;
 			return snapshot;
 		}
 
 		public virtual bool Equals(IAggregate other)
 		{
-			return null != other && other.Id == this.Id;
+			return null != other && other.Id == Id;
 		}
 
 		protected void Register<T>(Action<T> route)
 		{
-			this.RegisteredRoutes.Register(route);
+			RegisteredRoutes.Register(route);
 		}
 
 		protected void RaiseEvent(object @event)
 		{
 			((IAggregate)this).ApplyEvent(@event);
-			this.uncommittedEvents.Add(@event);
+			_uncommittedEvents.Add(@event);
 		}
 
 		protected virtual IMemento GetSnapshot()
@@ -90,12 +81,12 @@ namespace CommonDomain.Core
 
 		public override int GetHashCode()
 		{
-			return this.Id.GetHashCode();
+			return Id.GetHashCode();
 		}
 
 		public override bool Equals(object obj)
 		{
-			return this.Equals(obj as IAggregate);
+			return Equals(obj as IAggregate);
 		}
 	}
 }

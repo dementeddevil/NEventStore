@@ -1,10 +1,10 @@
-namespace CommonDomain.Persistence
-{
-	using System;
-	using System.Collections.Generic;
-	using System.Threading;
-	using System.Threading.Tasks;
+using System;
+using System.Collections.Generic;
+using System.Threading;
+using System.Threading.Tasks;
 
+namespace NEventStore.CommonDomain.Persistence
+{
     public interface ISagaRepository
 	{
 		Task<TSaga> GetByIdAsync<TSaga>(Guid sagaId, CancellationToken cancellationToken) where TSaga : class, ISaga, new();

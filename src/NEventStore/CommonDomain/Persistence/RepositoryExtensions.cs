@@ -1,8 +1,8 @@
-﻿namespace CommonDomain.Persistence
-{
-	using System;
-	using System.Threading;
+﻿using System;
+using System.Threading;
 
+namespace NEventStore.CommonDomain.Persistence
+{
     public static class RepositoryExtensions
 	{
 		public static void SaveAsync(this IRepository repository, IAggregate aggregate, Guid commitId, CancellationToken cancellationToken)

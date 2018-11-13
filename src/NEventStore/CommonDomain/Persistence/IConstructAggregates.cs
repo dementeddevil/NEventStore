@@ -1,8 +1,8 @@
-namespace CommonDomain.Persistence
-{
-	using System;
+using System;
 
-	public interface IConstructAggregates
+namespace NEventStore.CommonDomain.Persistence
+{
+    public interface IConstructAggregates
 	{
 		IAggregate Build(Type type, Guid id, IMemento snapshot);
 	}

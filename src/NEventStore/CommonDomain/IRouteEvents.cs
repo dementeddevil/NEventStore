@@ -1,8 +1,8 @@
-namespace CommonDomain
-{
-	using System;
+using System;
 
-	public interface IRouteEvents
+namespace NEventStore.CommonDomain
+{
+    public interface IRouteEvents
 	{
 		void Register<T>(Action<T> handler);
 

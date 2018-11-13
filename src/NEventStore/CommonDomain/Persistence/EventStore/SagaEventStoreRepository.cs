@@ -1,23 +1,18 @@
-namespace CommonDomain.Persistence.EventStore
-{
-    using System;
-    using System.Collections.Generic;
-    using System.Linq;
-    using System.Threading;
-    using System.Threading.Tasks;
-    using NEventStore;
-    using NEventStore.Persistence;
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
+using NEventStore.Persistence;
 
+namespace NEventStore.CommonDomain.Persistence.EventStore
+{
     public class SagaEventStoreRepository : ISagaRepository, IDisposable
     {
         private const string SagaTypeHeader = "SagaType";
-
         private const string UndispatchedMessageHeader = "UndispatchedMessage.";
-
         private readonly IStoreEvents _eventStore;
-
         private readonly IConstructSagas _factory;
-
         private readonly IDictionary<string, IEventStream> _streams = new Dictionary<string, IEventStream>();
 
         public SagaEventStoreRepository(IStoreEvents eventStore, IConstructSagas factory)

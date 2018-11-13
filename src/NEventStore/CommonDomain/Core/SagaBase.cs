@@ -1,10 +1,10 @@
-namespace CommonDomain.Core
-{
-	using System;
-	using System.Collections;
-	using System.Collections.Generic;
+using System;
+using System.Collections;
+using System.Collections.Generic;
 
-	public class SagaBase<TMessage> : ISaga, IEquatable<ISaga>
+namespace NEventStore.CommonDomain.Core
+{
+    public class SagaBase<TMessage> : ISaga, IEquatable<ISaga>
 		where TMessage : class
 	{
 		private readonly IDictionary<Type, Action<TMessage>> handlers = new Dictionary<Type, Action<TMessage>>();
@@ -15,7 +15,7 @@ namespace CommonDomain.Core
 
 		public virtual bool Equals(ISaga other)
 		{
-			return null != other && other.Id == this.Id;
+			return null != other && other.Id == Id;
 		}
 
 		public Guid Id { get; protected set; }
@@ -24,50 +24,50 @@ namespace CommonDomain.Core
 
 		public void Transition(object message)
 		{
-			this.handlers[message.GetType()](message as TMessage);
-			this.uncommitted.Add(message as TMessage);
-			this.Version++;
+			handlers[message.GetType()](message as TMessage);
+			uncommitted.Add(message as TMessage);
+			Version++;
 		}
 
 		ICollection ISaga.GetUncommittedEvents()
 		{
-			return this.uncommitted as ICollection;
+			return uncommitted as ICollection;
 		}
 
 		void ISaga.ClearUncommittedEvents()
 		{
-			this.uncommitted.Clear();
+			uncommitted.Clear();
 		}
 
 		ICollection ISaga.GetUndispatchedMessages()
 		{
-			return this.undispatched as ICollection;
+			return undispatched as ICollection;
 		}
 
 		void ISaga.ClearUndispatchedMessages()
 		{
-			this.undispatched.Clear();
+			undispatched.Clear();
 		}
 
 		protected void Register<TRegisteredMessage>(Action<TRegisteredMessage> handler)
 			where TRegisteredMessage : class, TMessage
 		{
-			this.handlers[typeof(TRegisteredMessage)] = message => handler(message as TRegisteredMessage);
+			handlers[typeof(TRegisteredMessage)] = message => handler(message as TRegisteredMessage);
 		}
 
 		protected void Dispatch(TMessage message)
 		{
-			this.undispatched.Add(message);
+			undispatched.Add(message);
 		}
 
 		public override int GetHashCode()
 		{
-			return this.Id.GetHashCode();
+			return Id.GetHashCode();
 		}
 
 		public override bool Equals(object obj)
 		{
-			return this.Equals(obj as ISaga);
+			return Equals(obj as ISaga);
 		}
 	}
 }

@@ -1,9 +1,9 @@
-namespace CommonDomain.Core
-{
-	using System;
-	using System.Runtime.Serialization;
+using System;
+using System.Runtime.Serialization;
 
-	public class HandlerForDomainEventNotFoundException : Exception
+namespace NEventStore.CommonDomain.Core
+{
+    public class HandlerForDomainEventNotFoundException : Exception
 	{
 		public HandlerForDomainEventNotFoundException()
 		{}

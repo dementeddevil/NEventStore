@@ -1,8 +1,8 @@
-namespace CommonDomain
-{
-	using System;
+using System;
 
-	public interface IMemento
+namespace NEventStore.CommonDomain
+{
+    public interface IMemento
 	{
 		Guid Id { get; set; }
 

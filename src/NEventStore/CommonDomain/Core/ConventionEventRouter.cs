@@ -1,17 +1,15 @@
-namespace CommonDomain.Core
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Reflection;
+
+namespace NEventStore.CommonDomain.Core
 {
-	using System;
-	using System.Collections.Generic;
-	using System.Linq;
-	using System.Reflection;
-
-	public class ConventionEventRouter : IRouteEvents
+    public class ConventionEventRouter : IRouteEvents
 	{
-		private readonly IDictionary<Type, Action<object>> handlers = new Dictionary<Type, Action<object>>();
-
-		private readonly bool throwOnApplyNotFound;
-
-		private IAggregate registered;
+		private readonly IDictionary<Type, Action<object>> _handlers = new Dictionary<Type, Action<object>>();
+		private readonly bool _throwOnApplyNotFound;
+		private IAggregate _registered;
 
 		public ConventionEventRouter()
 			: this(true)
@@ -19,13 +17,13 @@ namespace CommonDomain.Core
 
 		public ConventionEventRouter(bool throwOnApplyNotFound)
 		{
-			this.throwOnApplyNotFound = throwOnApplyNotFound;
+			_throwOnApplyNotFound = throwOnApplyNotFound;
 		}
 
 		public ConventionEventRouter(bool throwOnApplyNotFound, IAggregate aggregate)
 			: this(throwOnApplyNotFound)
 		{
-			this.Register(aggregate);
+			Register(aggregate);
 		}
 
 		public virtual void Register<T>(Action<T> handler)
@@ -35,17 +33,12 @@ namespace CommonDomain.Core
 				throw new ArgumentNullException(nameof(handler));
 			}
 
-			this.Register(typeof(T), @event => handler((T)@event));
+			Register(typeof(T), @event => handler((T)@event));
 		}
 
 		public virtual void Register(IAggregate aggregate)
 		{
-			if (aggregate == null)
-			{
-				throw new ArgumentNullException(nameof(aggregate));
-			}
-
-			this.registered = aggregate;
+		    _registered = aggregate ?? throw new ArgumentNullException(nameof(aggregate));
 
 			// Get instance methods named Apply with one parameter returning void
 			var applyMethods =
@@ -58,7 +51,7 @@ namespace CommonDomain.Core
 			foreach (var apply in applyMethods)
 			{
 				var applyMethod = apply.Method;
-				this.handlers.Add(apply.MessageType, m => applyMethod.Invoke(aggregate, new[] { m }));
+				_handlers.Add(apply.MessageType, m => applyMethod.Invoke(aggregate, new[] { m }));
 			}
 		}
 
@@ -69,20 +62,19 @@ namespace CommonDomain.Core
 				throw new ArgumentNullException(nameof(eventMessage));
 			}
 
-			Action<object> handler;
-			if (this.handlers.TryGetValue(eventMessage.GetType(), out handler))
+		    if (_handlers.TryGetValue(eventMessage.GetType(), out var handler))
 			{
 				handler(eventMessage);
 			}
-			else if (this.throwOnApplyNotFound)
+			else if (_throwOnApplyNotFound)
 			{
-				this.registered.ThrowHandlerNotFound(eventMessage);
+				_registered.ThrowHandlerNotFound(eventMessage);
 			}
 		}
 
 		private void Register(Type messageType, Action<object> handler)
 		{
-			this.handlers[messageType] = handler;
+			_handlers[messageType] = handler;
 		}
 	}
 }

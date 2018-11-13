@@ -80,7 +80,11 @@
     <Compile Include="CommonDomain\ISaga.cs" />
     <Compile Include="CommonDomain\Persistence\ConflictingCommandException.cs" />
     <Compile Include="CommonDomain\Persistence\EventStore\EventStoreRepository.cs" />
-    <Compile Include="CommonDomain\Persistence\EventStore\ExceptionMessages.Designer.cs" />
+    <Compile Include="CommonDomain\Persistence\EventStore\ExceptionMessages.Designer.cs">
+      <AutoGen>True</AutoGen>
+      <DesignTime>True</DesignTime>
+      <DependentUpon>ExceptionMessages.resx</DependentUpon>
+    </Compile>
     <Compile Include="CommonDomain\Persistence\EventStore\SagaEventStoreRepository.cs" />
     <Compile Include="CommonDomain\Persistence\IConstructAggregates.cs" />
     <Compile Include="CommonDomain\Persistence\IConstructSagas.cs" />
@@ -286,7 +290,10 @@
       <Generator>ResXFileCodeGenerator</Generator>
       <LastGenOutput>Messages.Designer.cs</LastGenOutput>
     </EmbeddedResource>
-    <EmbeddedResource Include="CommonDomain\Persistence\EventStore\ExceptionMessages.resx" />
+    <EmbeddedResource Include="CommonDomain\Persistence\EventStore\ExceptionMessages.resx">
+      <Generator>ResXFileCodeGenerator</Generator>
+      <LastGenOutput>ExceptionMessages.Designer.cs</LastGenOutput>
+    </EmbeddedResource>
     <EmbeddedResource Include="Messages.resx">
       <Generator>ResXFileCodeGenerator</Generator>
       <LastGenOutput>Messages.Designer.cs</LastGenOutput>

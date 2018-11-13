@@ -22,7 +22,7 @@ namespace NEventStore
             {
                 return false;
             }
-            return string.Equals(x.BucketId, y.BucketId) && string.Equals(x.StreamId, y.StreamId) && string.Equals(x.CommitId, y.CommitId) ;
+            return string.Equals(x.BucketId, y.BucketId) && string.Equals(x.StreamId, y.StreamId) && Equals(x.CommitId, y.CommitId) ;
         }
 
         public int GetHashCode(ICommit obj)

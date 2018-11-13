@@ -1,8 +1,8 @@
-namespace CommonDomain
-{
-	using System.Collections.Generic;
+using System.Collections.Generic;
 
-	public interface IDetectConflicts
+namespace NEventStore.CommonDomain
+{
+    public interface IDetectConflicts
 	{
 		void Register<TUncommitted, TCommitted>(ConflictDelegate handler) where TUncommitted : class where TCommitted : class;
 

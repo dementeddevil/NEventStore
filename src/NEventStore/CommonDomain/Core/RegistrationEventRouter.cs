@@ -1,36 +1,28 @@
-namespace CommonDomain.Core
+using System;
+using System.Collections.Generic;
+
+namespace NEventStore.CommonDomain.Core
 {
-	using System;
-	using System.Collections.Generic;
-
-	public class RegistrationEventRouter : IRouteEvents
+    public class RegistrationEventRouter : IRouteEvents
 	{
-		private readonly IDictionary<Type, Action<object>> handlers = new Dictionary<Type, Action<object>>();
-
-		private IAggregate regsitered;
+		private readonly IDictionary<Type, Action<object>> _handlers = new Dictionary<Type, Action<object>>();
+		private IAggregate _registered;
 
 		public virtual void Register<T>(Action<T> handler)
 		{
-			this.handlers[typeof(T)] = @event => handler((T)@event);
+			_handlers[typeof(T)] = @event => handler((T)@event);
 		}
 
 		public virtual void Register(IAggregate aggregate)
 		{
-			if (aggregate == null)
-			{
-				throw new ArgumentNullException(nameof(aggregate));
-			}
-
-			this.regsitered = aggregate;
+		    _registered = aggregate ?? throw new ArgumentNullException(nameof(aggregate));
 		}
 
 		public virtual void Dispatch(object eventMessage)
 		{
-			Action<object> handler;
-
-			if (!this.handlers.TryGetValue(eventMessage.GetType(), out handler))
+		    if (!_handlers.TryGetValue(eventMessage.GetType(), out var handler))
 			{
-				this.regsitered.ThrowHandlerNotFound(eventMessage);
+				_registered.ThrowHandlerNotFound(eventMessage);
 			}
 
 			handler(eventMessage);

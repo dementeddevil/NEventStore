@@ -1,9 +1,9 @@
-namespace CommonDomain
-{
-	using System;
-	using System.Collections;
+using System;
+using System.Collections;
 
-	public interface ISaga
+namespace NEventStore.CommonDomain
+{
+    public interface ISaga
 	{
 		Guid Id { get; }
 

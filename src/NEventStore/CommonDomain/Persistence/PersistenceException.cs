@@ -1,9 +1,9 @@
-namespace CommonDomain.Persistence
-{
-	using System;
-	using System.Runtime.Serialization;
+using System;
+using System.Runtime.Serialization;
 
-	/// <summary>
+namespace NEventStore.CommonDomain.Persistence
+{
+    /// <summary>
 	///   Represents a general failure of the persistence infrastructure.
 	/// </summary>
 	[Serializable]

@@ -1,10 +1,11 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
+
 namespace NEventStore.Persistence.AcceptanceTests
 {
-    using System;
-    using System.Collections.Generic;
-    using System.Linq;
-    using System.Threading;
-
     public static class ExtensionMethods
     {
         public static HashSet<T> ToHashSet<T>(this IEnumerable<T> collection)
@@ -17,33 +18,67 @@ namespace NEventStore.Persistence.AcceptanceTests
             return new LinkedList<T>(collection);
         }
 
-        public static ICommit CommitSingle(this IPersistStreams persistence, string streamId = null)
+        public static Task<ICommit> CommitSingleAsync(
+            this IPersistStreams persistence, string streamId = null)
         {
-            CommitAttempt commitAttempt = (streamId ?? Guid.NewGuid().ToString()).BuildAttempt();
-            return persistence.CommitAsync(commitAttempt, CancellationToken.None).GetAwaiter().GetResult();
+            return CommitSingleAsync(persistence, streamId, CancellationToken.None);
         }
 
-        public static ICommit CommitNext(this IPersistStreams persistence, ICommit previous)
+        public static Task<ICommit> CommitSingleAsync(
+            this IPersistStreams persistence, string streamId, CancellationToken cancellationToken)
+        {
+            var commitAttempt = (streamId ?? Guid.NewGuid().ToString()).BuildAttempt();
+            return persistence.CommitAsync(commitAttempt, cancellationToken);
+        }
+
+        public static Task<ICommit> CommitNextAsync(
+            this IPersistStreams persistence, ICommit previous)
+        {
+            return CommitNextAsync(persistence, previous, CancellationToken.None);
+        }
+
+        public static Task<ICommit> CommitNextAsync(
+            this IPersistStreams persistence, ICommit previous, CancellationToken cancellationToken)
         {
             var nextAttempt = previous.BuildNextAttempt();
-            return persistence.CommitAsync(nextAttempt, CancellationToken.None).GetAwaiter().GetResult();
+            return persistence.CommitAsync(nextAttempt, cancellationToken);
         }
 
-        public static ICommit CommitNext(this IPersistStreams persistence, CommitAttempt previous)
+        public static Task<ICommit> CommitNextAsync(
+            this IPersistStreams persistence, CommitAttempt previous)
+        {
+            return CommitNextAsync(persistence, previous, CancellationToken.None);
+        }
+
+        public static Task<ICommit> CommitNextAsync(
+            this IPersistStreams persistence, CommitAttempt previous, CancellationToken cancellationToken)
         {
             var nextAttempt = previous.BuildNextAttempt();
-            return persistence.CommitAsync(nextAttempt, CancellationToken.None).GetAwaiter().GetResult();
+            return persistence.CommitAsync(nextAttempt, cancellationToken);
         }
 
-        public static IEnumerable<CommitAttempt> CommitMany(this IPersistStreams persistence, int numberOfCommits, string streamId = null)
+        public static Task<IEnumerable<CommitAttempt>> CommitManyAsync(
+            this IPersistStreams persistence, int numberOfCommits, string streamId = null)
+        {
+            return CommitManyAsync(persistence, numberOfCommits, streamId, CancellationToken.None);
+        }
+
+        public static async Task<IEnumerable<CommitAttempt>> CommitManyAsync(
+            this IPersistStreams persistence, int numberOfCommits, string streamId, CancellationToken cancellationToken)
         {
             var commits = new List<CommitAttempt>();
             CommitAttempt attempt = null;
 
-            for (int i = 0; i < numberOfCommits; i++)
+            for (var i = 0; i < numberOfCommits; i++)
             {
-                attempt = attempt == null ? (streamId ?? Guid.NewGuid().ToString()).BuildAttempt() : attempt.BuildNextAttempt();
-                persistence.CommitAsync(attempt, CancellationToken.None).GetAwaiter().GetResult();
+                cancellationToken.ThrowIfCancellationRequested();
+
+                attempt = attempt == null 
+                    ? (streamId ?? Guid.NewGuid().ToString()).BuildAttempt()
+                    : attempt.BuildNextAttempt();
+
+                await persistence.CommitAsync(attempt, cancellationToken).ConfigureAwait(false);
+
                 commits.Add(attempt);
             }
 
@@ -124,7 +159,7 @@ namespace NEventStore.Persistence.AcceptanceTests
         {
             const int streamRevision = 2;
             const int commitSequence = 2;
-            Guid commitId = Guid.NewGuid();
+            var commitId = Guid.NewGuid();
             var headers = new Dictionary<string, object> {{"Key", "Value"}, {"Key2", (long) 1234}, {"Key3", null}};
             var events = new[]
             {

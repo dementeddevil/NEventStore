@@ -1,28 +1,34 @@
-﻿namespace NEventStore.Persistence.AcceptanceTests.BDD
-{
-    using Xunit;
+﻿using System.Threading.Tasks;
 
-    [RunWith(typeof (SpecificationBaseRunner))]
+namespace NEventStore.Persistence.AcceptanceTests.BDD
+{
+    using System;
+
     public abstract class SpecificationBase
     {
-        protected virtual void Because()
-        {}
-
-        protected virtual void Cleanup()
-        {}
-
-        protected virtual void Context()
-        {}
-
-        public void OnFinish()
+        public async Task Execute(Func<Task> actionMethod)
         {
-            Cleanup();
+            await Context().ConfigureAwait(false);
+            await Because().ConfigureAwait(false);
+
+            await actionMethod().ConfigureAwait(false);
+
+            await Cleanup().ConfigureAwait(false);
         }
 
-        public void OnStart()
+        protected virtual Task Context()
         {
-            Context();
-            Because();
+            return Task.CompletedTask;
+        }
+
+        protected virtual Task Because()
+        {
+            return Task.CompletedTask;
+        }
+
+        protected virtual Task Cleanup()
+        {
+            return Task.CompletedTask;
         }
     }
 }

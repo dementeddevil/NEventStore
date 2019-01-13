@@ -1,7 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
-using CommonDomain;
-using CommonDomain.Core;
+using NEventStore.CommonDomain;
+using NEventStore.CommonDomain.Core;
 using NEventStore;
 
 namespace AlphaTester

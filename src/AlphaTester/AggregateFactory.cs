@@ -1,5 +1,5 @@
-﻿using CommonDomain;
-using CommonDomain.Persistence;
+﻿using NEventStore.CommonDomain;
+using NEventStore.CommonDomain.Persistence;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -8,7 +8,7 @@ using System.Threading.Tasks;
 
 namespace AlphaTester
 {
-	/// <summary>
+    /// <summary>
 	/// Factory for aggregates
 	/// </summary>
 	public class AggregateFactory : IConstructAggregates

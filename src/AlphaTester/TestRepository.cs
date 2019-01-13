@@ -1,13 +1,15 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
-using CommonDomain.Core;
-using CommonDomain.Persistence.EventStore;
+using NEventStore.CommonDomain.Core;
+using NEventStore.CommonDomain.Persistence.EventStore;
 using NEventStore;
 
 namespace AlphaTester
 {
-	public class TestRepository : NEventStoreRepositoryBase
+    using System.Threading;
+
+    public class TestRepository : NEventStoreRepositoryBase
 	{
 		private static readonly object _lockObject = new object();
 		private static IStoreEvents _storeEvents = null;
@@ -33,14 +35,14 @@ namespace AlphaTester
 			}
 
 			LazyInit( ref _storeEvents, _lockObject );
-			return _repository.GetById<SimpleAggregate>( id, version );
+			return _repository.GetByIdAsync<SimpleAggregate>( id, version, CancellationToken.None ).GetAwaiter().GetResult();
 		}
 
 		public List<ICommit> GetSimpleAggregateFromTo( DateTime start, DateTime end )
 		{
 
 			LazyInit( ref _storeEvents, _lockObject );
-			return _storeEvents.Advanced.GetFromTo( Bucket.Default, start, end ).ToList();
+			return _storeEvents.Advanced.GetFromToAsync( Bucket.Default, start, end, CancellationToken.None ).GetAwaiter().GetResult().ToList();
 		}
 
 		/// <summary>
@@ -60,14 +62,14 @@ namespace AlphaTester
 			}
 
 			LazyInit( ref _storeEvents, _lockObject );
-			_repository.Save( aggregate, commitId, updateHeaders );
+			_repository.SaveAsync( aggregate, commitId, updateHeaders, CancellationToken.None ).GetAwaiter().GetResult();
 		}
 
 
         public void Snapshot(SimpleAggregate aggregate)
         {
             var memento = aggregate.prepareMemento();
-            _storeEvents.Advanced.AddSnapshot(new Snapshot(aggregate.Id.ToString(), memento.Version, memento));
+            _storeEvents.Advanced.AddSnapshotAsync(new Snapshot(aggregate.Id.ToString(), memento.Version, memento), CancellationToken.None).GetAwaiter().GetResult();
         }
 
         /// <summary>

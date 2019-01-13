@@ -13,6 +13,8 @@ using NEventStore.Serialization;
 
 namespace NEventStore.Persistence.AzureBlob
 {
+    using System.Threading.Tasks;
+
     /// <summary>
     /// Main engine for using Azure blob storage for event sourcing.
     /// The general pattern is that all commits for a given stream live within a single page blob.
@@ -53,17 +55,18 @@ namespace NEventStore.Persistence.AzureBlob
         /// <param name="connectionString">The Azure blob storage connection string.</param>
         /// <param name="serializer">The serializer to use.</param>
         /// <param name="options">Options for the Azure blob storage.</param>
-        public AzureBlobPersistenceEngine(string connectionString, ISerialize serializer, AzureBlobPersistenceOptions options = null)
+        public AzureBlobPersistenceEngine(
+            string connectionString,
+            ISerialize serializer,
+            AzureBlobPersistenceOptions options = null)
         {
-            if (String.IsNullOrEmpty(connectionString))
-            { throw new ArgumentException("connectionString cannot be null or empty"); }
-            if (serializer == null)
-            { throw new ArgumentNullException("serializer"); }
-            if (options == null)
-            { throw new ArgumentNullException("options"); }
+            if (string.IsNullOrEmpty(connectionString))
+            {
+                throw new ArgumentException("connectionString cannot be null or empty");
+            }
 
-            _serializer = serializer;
-            _options = options;
+            _serializer = serializer ?? throw new ArgumentNullException(nameof(serializer));
+            _options = options ?? throw new ArgumentNullException(nameof(options));
 
             _connectionString = connectionString;
             var storageAccount = CloudStorageAccount.Parse(connectionString);
@@ -75,14 +78,13 @@ namespace NEventStore.Persistence.AzureBlob
         /// <summary>
         /// Is the engine disposed?
         /// </summary>
-        public bool IsDisposed
-        { get { return _disposed; } }
+        public bool IsDisposed => _disposed;
 
         /// <summary>
         /// Connect to Azure storage and get a reference to the container object,
         /// creating it if it does not exist.
         /// </summary>
-        public void Initialize()
+        public async Task InitializeAsync(CancellationToken cancellationToken)
         {
             // we want to increase the connection limit used to communicate with via HTTP rest
             // calls otherwise we will feel significant performance degradation.  This can also
@@ -90,7 +92,7 @@ namespace NEventStore.Persistence.AzureBlob
             // application developer.
             if (Interlocked.Increment(ref _connectionLimitSet) < 2)
             {
-                Uri uri = new Uri(_primaryContainer.Uri.AbsoluteUri);
+                var uri = new Uri(_primaryContainer.Uri.AbsoluteUri);
                 var sp = ServicePointManager.FindServicePoint(uri);
                 sp.ConnectionLimit = _options.ParallelConnectionLimit;
 
@@ -100,26 +102,46 @@ namespace NEventStore.Persistence.AzureBlob
 
                 var pageBlobReference = blobContainer.GetPageBlobReference(_checkpointBlobName);
                 try
-                { pageBlobReference.Create(512, accessCondition: AccessCondition.GenerateIfNoneMatchCondition("*")); }
+                {
+                    await pageBlobReference
+                        .CreateAsync(
+                            512,
+                            AccessCondition.GenerateIfNoneMatchCondition("*"),
+                            null,
+                            null,
+                            cancellationToken)
+                        .ConfigureAwait(false);
+                }
                 catch (Microsoft.WindowsAzure.Storage.StorageException ex)
                 {
                     // 409 means it was already there
                     if (!ex.Message.Contains("409"))
-                    { throw; }
+                    {
+                        throw;
+                    }
                 }
             }
 
             if (Interlocked.Increment(ref _initialized) < 2)
-            { _primaryContainer.CreateIfNotExists(); }
+            {
+                await _primaryContainer
+                    .CreateIfNotExistsAsync(cancellationToken)
+                    .ConfigureAwait(false);
+            }
         }
 
         /// <summary>
         /// Not Implemented.
         /// </summary>
+        /// <param name="cancellationToken"></param>
         /// <param name="checkpointToken"></param>
         /// <returns></returns>
-        public ICheckpoint GetCheckpoint(string checkpointToken = null)
-        { throw new NotImplementedException(); }
+        public Task<ICheckpoint> GetCheckpointAsync(
+            CancellationToken cancellationToken,
+            string checkpointToken = null)
+        {
+            throw new NotImplementedException();
+        }
 
         /// <summary>
         /// Gets the list of commits from a given blobEntry, starting from a given date
@@ -127,39 +149,59 @@ namespace NEventStore.Persistence.AzureBlob
         /// </summary>
         /// <param name="bucketId">The blobEntry id to pull commits from.</param>
         /// <param name="start">The starting date for commits.</param>
+        /// <param name="cancellationToken"></param>
         /// <returns>The list of commits from the given blobEntry and greater than or equal to the start date.</returns>
-        public IEnumerable<ICommit> GetFrom(string bucketId, DateTime start)
-        { return GetFromTo(bucketId, start, DateTime.MaxValue); }
+        public Task<IEnumerable<ICommit>> GetFromAsync(
+            string bucketId,
+            DateTime start,
+            CancellationToken cancellationToken)
+        {
+            return GetFromToAsync(bucketId, start, DateTime.MaxValue, cancellationToken);
+        }
 
         /// <summary>
         /// Ordered fetch by checkpoint
         /// </summary>
         /// <param name="checkpointToken"></param>
         /// <returns>this method will get very slow as the number of aggregates increase</returns>
-        public IEnumerable<ICommit> GetFrom(string checkpointToken = null)
+        public async Task<IEnumerable<ICommit>> GetFromAsync(CancellationToken cancellationToken, string checkpointToken = null)
         {
             var containers = _blobClient.ListContainers(_eventSourcePrefix);
             var allCommitDefinitions = new List<Tuple<WrappedPageBlob, PageBlobCommitDefinition>>();
 
             foreach (var container in containers)
             {
-                var blobs = WrappedPageBlob.GetAllMatchinPrefix(container, GetContainerName());
+                var blobs = WrappedPageBlob.GetAllMatchingPrefix(container, GetContainerName());
 
                 // this could be a tremendous amount of data.  Depending on system used
                 // this may not be performant enough and may require some sort of index be built.
                 foreach (var pageBlob in blobs)
                 {
-                    HeaderDefinitionMetadata headerDefinitionMetadata = null;
-                    var header = GetHeaderWithRetry(pageBlob, out headerDefinitionMetadata);
-                    foreach (var definition in header.PageBlobCommitDefinitions)
-                    { allCommitDefinitions.Add(new Tuple<WrappedPageBlob, PageBlobCommitDefinition>(pageBlob, definition)); }
+                    var headerAndMetadata = await GetHeaderWithRetryAsync(pageBlob, cancellationToken)
+                        .ConfigureAwait(false);
+
+                    foreach (var definition in headerAndMetadata.Item1.PageBlobCommitDefinitions)
+                    {
+                        allCommitDefinitions.Add(new Tuple<WrappedPageBlob, PageBlobCommitDefinition>(pageBlob, definition));
+                    }
                 }
             }
 
             // now sort the definitions so we can return out sorted
-            var orderedCommitDefinitions = allCommitDefinitions.OrderBy((x) => x.Item2.Checkpoint);
+            var commits = new List<ICommit>();
+            var orderedCommitDefinitions = allCommitDefinitions
+                .OrderBy((x) => x.Item2.Checkpoint);
             foreach (var orderedCommitDefinition in orderedCommitDefinitions)
-            { yield return CreateCommitFromDefinition(orderedCommitDefinition.Item1, orderedCommitDefinition.Item2); }
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                commits.Add(await CreateCommitFromDefinitionAsync(
+                    orderedCommitDefinition.Item1,
+                    orderedCommitDefinition.Item2,
+                    cancellationToken).ConfigureAwait(false));
+            }
+
+            return commits;
         }
 
         /// <summary>
@@ -170,28 +212,39 @@ namespace NEventStore.Persistence.AzureBlob
         /// <param name="start">The starting date for commits.</param>
         /// <param name="end">The ending date for commits.</param>
         /// <returns>The list of commits from the given blobEntry and greater than or equal to the start date and less than or equal to the end date.</returns>
-        public IEnumerable<ICommit> GetFromTo(string bucketId, DateTime start, DateTime end)
+        public async Task<IEnumerable<ICommit>> GetFromToAsync(string bucketId, DateTime start, DateTime end, CancellationToken cancellationToken)
         {
-            var pageBlobs = WrappedPageBlob.GetAllMatchinPrefix(_primaryContainer, GetContainerName() + "/" + bucketId);
+            var pageBlobs = WrappedPageBlob.GetAllMatchingPrefix(_primaryContainer, GetContainerName() + "/" + bucketId);
 
             // this could be a tremendous amount of data.  Depending on system used
             // this may not be performant enough and may require some sort of index be built.
             var allCommitDefinitions = new List<Tuple<WrappedPageBlob, PageBlobCommitDefinition>>();
             foreach (var pageBlob in pageBlobs)
             {
-                HeaderDefinitionMetadata headerDefinitionMetadata = null;
-                var header = GetHeaderWithRetry(pageBlob, out headerDefinitionMetadata);
-                foreach (var definition in header.PageBlobCommitDefinitions)
+                var headerAndMetadata = await GetHeaderWithRetryAsync(pageBlob, cancellationToken).ConfigureAwait(false);
+                foreach (var definition in headerAndMetadata.Item1.PageBlobCommitDefinitions)
                 {
                     if (definition.CommitStampUtc >= start && definition.CommitStampUtc <= end)
-                    { allCommitDefinitions.Add(new Tuple<WrappedPageBlob, PageBlobCommitDefinition>(pageBlob, definition)); }
+                    {
+                        allCommitDefinitions.Add(new Tuple<WrappedPageBlob, PageBlobCommitDefinition>(pageBlob, definition));
+                    }
                 }
             }
 
             // now sort the definitions so we can return out sorted
+            var commits = new List<ICommit>();
             var orderedCommitDefinitions = allCommitDefinitions.OrderBy((x) => x.Item2.CommitStampUtc);
             foreach (var orderedCommitDefinition in orderedCommitDefinitions)
-            { yield return CreateCommitFromDefinition(orderedCommitDefinition.Item1, orderedCommitDefinition.Item2); }
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                commits.Add(await CreateCommitFromDefinitionAsync(
+                    orderedCommitDefinition.Item1,
+                    orderedCommitDefinition.Item2,
+                    cancellationToken).ConfigureAwait(false));
+            }
+
+            return commits;
         }
 
         /// <summary>
@@ -202,19 +255,25 @@ namespace NEventStore.Persistence.AzureBlob
         /// <param name="minRevision">The minimum revision.</param>
         /// <param name="maxRevision">The maximum revision.</param>
         /// <returns></returns>
-        public IEnumerable<ICommit> GetFrom(string bucketId, string streamId, int minRevision, int maxRevision)
+        public async Task<IEnumerable<ICommit>> GetFromAsync(string bucketId, string streamId, int minRevision, int maxRevision, CancellationToken cancellationToken)
         {
-            var pageBlob = WrappedPageBlob.CreateNewIfNotExists(_primaryContainer, bucketId + "/" + streamId, _options.BlobNumPages);
+            var pageBlob = await WrappedPageBlob
+                .CreateNewIfNotExistsAsync(
+                    _primaryContainer,
+                    bucketId + "/" + streamId,
+                    _options.BlobNumPages,
+                    cancellationToken)
+                .ConfigureAwait(false);
 
-            HeaderDefinitionMetadata headerDefinitionMetadata = null;
-            var header = GetHeaderWithRetry(pageBlob, out headerDefinitionMetadata);
+            var headerAndMetadata = await GetHeaderWithRetryAsync(
+                pageBlob, cancellationToken).ConfigureAwait(false);
 
             // find out how many pages we are reading
             int startPage = 0;
             int endPage = startPage + 1;
             int startIndex = 0;
             int numberOfCommits = 0;
-            foreach (var commitDefinition in header.PageBlobCommitDefinitions)
+            foreach (var commitDefinition in headerAndMetadata.Item1.PageBlobCommitDefinitions)
             {
                 if (minRevision > commitDefinition.Revision)
                 {
@@ -222,22 +281,33 @@ namespace NEventStore.Persistence.AzureBlob
                     startPage += commitDefinition.TotalPagesUsed;
                 }
                 else if (maxRevision < commitDefinition.Revision)
-                { break; }
+                {
+                    break;
+                }
                 else
-                { ++numberOfCommits; }
+                {
+                    ++numberOfCommits;
+                }
 
                 endPage += commitDefinition.TotalPagesUsed;
             }
 
             // download all the data
-            var downloadedData = pageBlob.DownloadBytes(startPage * _blobPageSize, endPage * _blobPageSize);
+            var downloadedData = await pageBlob
+                .DownloadBytesAsync(
+                    startPage * _blobPageSize,
+                    endPage * _blobPageSize,
+                    false,
+                    cancellationToken)
+                .ConfigureAwait(false);
 
             // process the downloaded data
             var commits = new List<ICommit>();
             for (var i = startIndex; i != startIndex + numberOfCommits; i++)
             {
-                var commitStartIndex = (header.PageBlobCommitDefinitions[i].StartPage - startPage) * _blobPageSize;
-                var commitSize = header.PageBlobCommitDefinitions[i].DataSizeBytes;
+                var commitStartIndex = (headerAndMetadata.Item1.PageBlobCommitDefinitions[i].StartPage - startPage) * _blobPageSize;
+                var commitSize = headerAndMetadata.Item1.PageBlobCommitDefinitions[i].DataSizeBytes;
+
                 using (var ms = new MemoryStream(downloadedData, commitStartIndex, commitSize, false))
                 {
                     var commit = _serializer.Deserialize<AzureBlobCommit>(ms);
@@ -252,14 +322,14 @@ namespace NEventStore.Persistence.AzureBlob
         /// Gets all undispatched commits across all buckets.
         /// </summary>
         /// <returns>A list of all undispatched commits.</returns>
-        public IEnumerable<ICommit> GetUndispatchedCommits()
+        public async Task<IEnumerable<ICommit>> GetUndispatchedCommitsAsync(CancellationToken cancellationToken)
         {
             Logger.Info("Getting undispatched commits.  This is only done during initialization.  This may take a while...");
             var allCommitDefinitions = new List<Tuple<WrappedPageBlob, PageBlobCommitDefinition>>();
 
             // this container is fetched lazily.  so actually filtering down at this level will improve our performance,
             // assuming the options dictate a date range that filters down our set.
-            var pageBlobs = WrappedPageBlob.GetAllMatchinPrefix(_primaryContainer, null);
+            var pageBlobs = WrappedPageBlob.GetAllMatchingPrefix(_primaryContainer, null);
             Logger.Info("Checking [{0}] blobs for undispatched commits... this may take a while", pageBlobs.Count());
 
             // this could be a tremendous amount of data.  Depending on system used
@@ -273,7 +343,9 @@ namespace NEventStore.Persistence.AzureBlob
                     bool isDirty = false;
                     string isDirtyString;
                     if (temp.Metadata.TryGetValue(_hasUndispatchedCommitsKey, out isDirtyString))
-                    { isDirty = Boolean.Parse(isDirtyString); }
+                    {
+                        isDirty = Boolean.Parse(isDirtyString);
+                    }
 
                     if (isDirty)
                     {
@@ -287,12 +359,13 @@ namespace NEventStore.Persistence.AzureBlob
                         {
                             try
                             {
-                                HeaderDefinitionMetadata headerDefinitionMetadata = null;
-                                var header = GetHeaderWithRetry(temp, out headerDefinitionMetadata);
+                                var headerAndMetadata = await GetHeaderWithRetryAsync(
+                                    temp, cancellationToken).ConfigureAwait(false);
+
                                 bool wasActuallyDirty = false;
-                                if (header.UndispatchedCommitCount > 0)
+                                if (headerAndMetadata.Item1.UndispatchedCommitCount > 0)
                                 {
-                                    foreach (var definition in header.PageBlobCommitDefinitions)
+                                    foreach (var definition in headerAndMetadata.Item1.PageBlobCommitDefinitions)
                                     {
                                         if (!definition.IsDispatched)
                                         {
@@ -306,7 +379,7 @@ namespace NEventStore.Persistence.AzureBlob
                                 if (!wasActuallyDirty)
                                 {
                                     temp.Metadata[_hasUndispatchedCommitsKey] = false.ToString();
-                                    temp.SetMetadata();
+                                    await temp.SetMetadataAsync(cancellationToken).ConfigureAwait(false);
                                 }
 
                                 break;
@@ -322,7 +395,7 @@ namespace NEventStore.Persistence.AzureBlob
                                 {
                                     Logger.Info("Concurrency issue detected while processing undispatched commits.  going to retry to load container");
                                     try
-                                    { temp = WrappedPageBlob.GetAllMatchinPrefix(_primaryContainer, pageBlob.Name).Single(); }
+                                    { temp = WrappedPageBlob.GetAllMatchingPrefix(_primaryContainer, pageBlob.Name).Single(); }
                                     catch (Exception ex)
                                     { Logger.Warn("Attempted to reload during concurrency and failed... will retry.  [{0}]", ex.Message); }
                                 }
@@ -348,22 +421,41 @@ namespace NEventStore.Persistence.AzureBlob
 
             // now sort the definitions so we can return out sorted
             Logger.Info("Found [{0}] undispatched commits", allCommitDefinitions.Count);
+
+            var commits = new List<ICommit>();
             var orderedCommitDefinitions = allCommitDefinitions.OrderBy((x) => x.Item2.Checkpoint);
             foreach (var orderedCommitDefinition in orderedCommitDefinitions)
-            { yield return CreateCommitFromDefinition(orderedCommitDefinition.Item1, orderedCommitDefinition.Item2); }
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                commits.Add(await CreateCommitFromDefinitionAsync(
+                    orderedCommitDefinition.Item1,
+                    orderedCommitDefinition.Item2,
+                    cancellationToken).ConfigureAwait(false));
+            }
+
+            return commits;
         }
 
         /// <summary>
         /// Marks a stream Id's commit as dispatched.
         /// </summary>
         /// <param name="commit">The commit object to mark as dispatched.</param>
-        public void MarkCommitAsDispatched(ICommit commit)
+        /// <param name="cancellationToken"></param>
+        public async Task MarkCommitAsDispatchedAsync(ICommit commit, CancellationToken cancellationToken)
         {
             AddCheckpointTableEntry(commit);
 
-            var pageBlob = WrappedPageBlob.GetAssumingExists(_primaryContainer, commit.BucketId + "/" + commit.StreamId);
-            HeaderDefinitionMetadata headerDefinition = null;
-            var header = GetHeaderWithRetry(pageBlob, out headerDefinition);
+            var pageBlob = await WrappedPageBlob
+                .GetAssumingExistsAsync(
+                    _primaryContainer, 
+                    commit.BucketId + "/" + commit.StreamId,
+                    cancellationToken)
+                .ConfigureAwait(false);
+
+            var headerAndMetadata = await GetHeaderWithRetryAsync(pageBlob, cancellationToken).ConfigureAwait(false);
+            var header = headerAndMetadata.Item1;
+            var headerDefinition = headerAndMetadata.Item2;
 
             // we must commit at a page offset, we will just track how many pages in we must start writing at
             foreach (var commitDefinition in header.PageBlobCommitDefinitions)
@@ -375,44 +467,83 @@ namespace NEventStore.Persistence.AzureBlob
                 }
             }
 
-            CommitNewMessage(pageBlob, null, header, headerDefinition,
-                headerDefinition.HeaderStartLocationOffsetBytes);
+            await CommitNewMessageAsync(
+                pageBlob,
+                null,
+                header,
+                headerDefinition,
+                headerDefinition.HeaderStartLocationOffsetBytes,
+                cancellationToken).ConfigureAwait(false);
         }
 
         /// <summary>
         /// Purge a container.
         /// </summary>
-        public void Purge()
-        { _primaryContainer.Delete(); }
+        public Task PurgeAsync(CancellationToken cancellationToken)
+        {
+            return _primaryContainer.DeleteAsync(cancellationToken);
+        }
 
         /// <summary>
         /// Purge a series of streams
         /// </summary>
         /// <param name="bucketId"></param>
-        public void Purge(string bucketId)
+        /// <param name="cancellationToken"></param>
+        public async Task PurgeAsync(string bucketId, CancellationToken cancellationToken)
         {
-            var blobs = _primaryContainer.ListBlobs(GetContainerName() + "/" + bucketId, true, BlobListingDetails.Metadata).OfType<CloudPageBlob>();
+            // TODO: Perform segmented pass rather than synchronous list
+            var blobs = _primaryContainer
+                .ListBlobs(
+                    GetContainerName() + "/" + bucketId,
+                    true,
+                    BlobListingDetails.Metadata)
+                .OfType<CloudPageBlob>();
+
             foreach (var blob in blobs)
-            { blob.Delete(); }
+            {
+                await blob.DeleteAsync(cancellationToken).ConfigureAwait(false);
+            }
         }
 
         /// <summary>
         /// Drop a container.
         /// </summary>
-        public void Drop()
-        { _primaryContainer.Delete(); }
+        public Task DropAsync(CancellationToken cancellationToken)
+        {
+            return _primaryContainer.DeleteAsync(cancellationToken);
+        }
 
         /// <summary>
         /// Deletes a stream by blobEntry and stream id.
         /// </summary>
         /// <param name="bucketId">The blobEntry id.</param>
         /// <param name="streamId">The stream id.</param>
-        public void DeleteStream(string bucketId, string streamId)
+        /// <param name="cancellationToken"></param>
+        public async Task DeleteStreamAsync(string bucketId, string streamId, CancellationToken cancellationToken)
         {
             var pageBlobReference = _primaryContainer.GetPageBlobReference(bucketId + "/" + streamId);
-            string leaseId = pageBlobReference.AcquireLease(new TimeSpan(0, 0, 60), null);
-            pageBlobReference.Delete(accessCondition: AccessCondition.GenerateLeaseCondition(leaseId));
-            pageBlobReference.ReleaseLease(AccessCondition.GenerateLeaseCondition(leaseId));
+
+            var leaseId = await pageBlobReference
+                .AcquireLeaseAsync(
+                    new TimeSpan(0, 0, 60),
+                    null,
+                    cancellationToken)
+                .ConfigureAwait(false);
+
+            try
+            {
+                await pageBlobReference
+                    .DeleteAsync(
+                        DeleteSnapshotsOption.IncludeSnapshots,
+                        AccessCondition.GenerateLeaseCondition(leaseId),
+                        null,
+                        null,
+                        cancellationToken);
+            }
+            finally
+            {
+                pageBlobReference.ReleaseLease(AccessCondition.GenerateLeaseCondition(leaseId));
+            }
         }
 
         /// <summary>
@@ -437,44 +568,71 @@ namespace NEventStore.Persistence.AzureBlob
         /// Adds a commit to a stream.
         /// </summary>
         /// <param name="attempt">The commit attempt to be added.</param>
+        /// <param name="cancellationToken"></param>
         /// <returns>An Commit if successful.</returns>
-        public ICommit Commit(CommitAttempt attempt)
+        public async Task<ICommit> CommitAsync(CommitAttempt attempt, CancellationToken cancellationToken)
         {
-            var pageBlob = WrappedPageBlob.CreateNewIfNotExists(_primaryContainer, attempt.BucketId + "/" + attempt.StreamId, _options.BlobNumPages);
-            HeaderDefinitionMetadata headerDefinitionMetadata = null;
-            var header = GetHeaderWithRetry(pageBlob, out headerDefinitionMetadata);
+            var pageBlob = await WrappedPageBlob
+                .CreateNewIfNotExistsAsync(
+                    _primaryContainer,
+                    attempt.BucketId + "/" + attempt.StreamId,
+                    _options.BlobNumPages,
+                    cancellationToken)
+                .ConfigureAwait(false);
+
+            var headerAndMetadata = await GetHeaderWithRetryAsync(
+                pageBlob, cancellationToken).ConfigureAwait(false);
+            var header = headerAndMetadata.Item1;
+            var headerDefinitionMetadata = headerAndMetadata.Item2;
 
             // we must commit at a page offset, we will just track how many pages in we must start writing at
             var startPage = 0;
             foreach (var commit in header.PageBlobCommitDefinitions)
             {
                 if (commit.CommitId == attempt.CommitId)
-                { throw new DuplicateCommitException("Duplicate Commit Attempt"); }
+                {
+                    throw new DuplicateCommitException("Duplicate Commit Attempt");
+                }
 
                 startPage += commit.TotalPagesUsed;
             }
 
             if (attempt.CommitSequence <= header.LastCommitSequence)
-            { throw new ConcurrencyException("Concurrency exception in Commit"); }
+            {
+                throw new ConcurrencyException("Concurrency exception in Commit");
+            }
 
-            var blobCommit = new AzureBlobCommit();
-            blobCommit.BucketId = attempt.BucketId;
-            blobCommit.CommitId = attempt.CommitId;
-            blobCommit.CommitSequence = attempt.CommitSequence;
-            blobCommit.CommitStampUtc = attempt.CommitStamp;
-            blobCommit.Events = attempt.Events.ToList();
-            blobCommit.Headers = attempt.Headers;
-            blobCommit.StreamId = attempt.StreamId;
-            blobCommit.StreamRevision = attempt.StreamRevision;
-            blobCommit.Checkpoint = GetNextCheckpoint();
+            var blobCommit = new AzureBlobCommit
+            {
+                BucketId = attempt.BucketId,
+                CommitId = attempt.CommitId,
+                CommitSequence = attempt.CommitSequence,
+                CommitStampUtc = attempt.CommitStamp,
+                Events = attempt.Events.ToList(),
+                Headers = attempt.Headers,
+                StreamId = attempt.StreamId,
+                StreamRevision = attempt.StreamRevision,
+                Checkpoint = await GetNextCheckpointAsync(cancellationToken).ConfigureAwait(false)
+            };
             var serializedBlobCommit = _serializer.Serialize(blobCommit);
 
-            header.AppendPageBlobCommitDefinition(new PageBlobCommitDefinition(serializedBlobCommit.Length, attempt.CommitId, attempt.StreamRevision,
-                attempt.CommitStamp, header.PageBlobCommitDefinitions.Count, startPage, blobCommit.Checkpoint));
+            header.AppendPageBlobCommitDefinition(
+                new PageBlobCommitDefinition(
+                    serializedBlobCommit.Length,
+                    attempt.CommitId,
+                    attempt.StreamRevision,
+                    attempt.CommitStamp,
+                    header.PageBlobCommitDefinitions.Count, startPage, blobCommit.Checkpoint));
             ++header.UndispatchedCommitCount;
             header.LastCommitSequence = attempt.CommitSequence;
 
-            CommitNewMessage(pageBlob, serializedBlobCommit, header, headerDefinitionMetadata, startPage * _blobPageSize);
+            await CommitNewMessageAsync(
+                pageBlob,
+                serializedBlobCommit,
+                header,
+                headerDefinitionMetadata,
+                startPage * _blobPageSize,
+                cancellationToken).ConfigureAwait(false);
             return CreateCommitFromAzureBlobCommit(blobCommit);
         }
 
@@ -484,11 +642,15 @@ namespace NEventStore.Persistence.AzureBlob
         /// <param name="bucketId"></param>
         /// <param name="streamId"></param>
         /// <param name="maxRevision"></param>
+        /// <param name="cancellationToken"></param>
         /// <returns></returns>
-        public ISnapshot GetSnapshot(string bucketId, string streamId, int maxRevision)
+        public async Task<ISnapshot> GetSnapshotAsync(string bucketId, string streamId, int maxRevision, CancellationToken cancellationToken)
         {
             ISnapshot snapshot = null;
-            var snapshotPageBlob = WrappedPageBlob.GetAssumingExists(_primaryContainer, bucketId + "/ss/" + streamId);
+
+            var snapshotPageBlob = await WrappedPageBlob
+                .GetAssumingExistsAsync(_primaryContainer, bucketId + "/ss/" + streamId, cancellationToken)
+                .ConfigureAwait(false);
             if (snapshotPageBlob != null)
             {
                 var snapshotSize = Convert.ToInt32(snapshotPageBlob.Metadata["ss_data_size_bytes"]);
@@ -496,7 +658,14 @@ namespace NEventStore.Persistence.AzureBlob
 
                 if (snapshotRevision <= maxRevision && snapshotSize != 0)
                 {
-                    var snapshotBytes = snapshotPageBlob.DownloadBytes(0, snapshotSize);
+                    var snapshotBytes = await snapshotPageBlob
+                        .DownloadBytesAsync(
+                            0,
+                            snapshotSize,
+                            false,
+                            cancellationToken)
+                        .ConfigureAwait(false);
+
                     var snapshotObject = _serializer.Deserialize<object>(snapshotBytes);
                     snapshot = new Snapshot(bucketId, streamId, snapshotRevision, snapshotObject);
                 }
@@ -514,23 +683,38 @@ namespace NEventStore.Persistence.AzureBlob
         /// Not yet implemented.
         /// </summary>
         /// <param name="snapshot"></param>
+        /// <param name="cancellationToken"></param>
         /// <returns></returns>
-        public bool AddSnapshot(ISnapshot snapshot)
+        public async Task<bool> AddSnapshotAsync(ISnapshot snapshot, CancellationToken cancellationToken)
         {
-            var pageBlob = WrappedPageBlob.CreateNewIfNotExists(_primaryContainer, snapshot.BucketId + "/ss/" + snapshot.StreamId, _options.BlobNumPages);
+            var pageBlob = await WrappedPageBlob
+                .CreateNewIfNotExistsAsync(
+                    _primaryContainer,
+                    $"{snapshot.BucketId}/ss/{snapshot.StreamId}",
+                    _options.BlobNumPages,
+                    cancellationToken);
 
             var serializedSnapshot = _serializer.Serialize(snapshot.Payload);
             pageBlob.Metadata["ss_data_size_bytes"] = "0";
             pageBlob.Metadata["ss_stream_revision"] = "0";
-            pageBlob.SetMetadata();
+            await pageBlob.SetMetadataAsync(cancellationToken).ConfigureAwait(false);
 
             var pageAlignedSize = GetPageAlignedSize(serializedSnapshot.Length);
             using (var serializedSnapshotStream = CreateAndFillStreamAligned(pageAlignedSize, serializedSnapshot))
-            { pageBlob.Write(serializedSnapshotStream, 0, 0, new HeaderDefinitionMetadata()); }
+            {
+                await pageBlob
+                    .WriteAsync(
+                        serializedSnapshotStream,
+                        0,
+                        0,
+                        new HeaderDefinitionMetadata(),
+                        cancellationToken)
+                    .ConfigureAwait(false);
+            }
 
             pageBlob.Metadata["ss_data_size_bytes"] = serializedSnapshot.Length.ToString();
             pageBlob.Metadata["ss_stream_revision"] = snapshot.StreamRevision.ToString();
-            pageBlob.SetMetadata();
+            await pageBlob.SetMetadataAsync(cancellationToken).ConfigureAwait(false);
 
             return true;
         }
@@ -540,8 +724,9 @@ namespace NEventStore.Persistence.AzureBlob
         /// </summary>
         /// <param name="bucketId"></param>
         /// <param name="maxThreshold"></param>
+        /// <param name="cancellationToken"></param>
         /// <returns></returns>
-        public IEnumerable<IStreamHead> GetStreamsToSnapshot(string bucketId, int maxThreshold)
+        public Task<IEnumerable<IStreamHead>> GetStreamsToSnapshotAsync(string bucketId, int maxThreshold, CancellationToken cancellationToken)
         { throw new NotImplementedException(); }
 
         #region private helpers
@@ -549,22 +734,35 @@ namespace NEventStore.Persistence.AzureBlob
         /// <summary>
         /// Creates a commit from the provided definition
         /// </summary>
-        /// <param name="streamId"></param>
+        /// <param name="blob"></param>
         /// <param name="commitDefinition"></param>
+        /// <param name="cancellationToken"></param>
         /// <returns></returns>
-        private ICommit CreateCommitFromDefinition(WrappedPageBlob blob, PageBlobCommitDefinition commitDefinition)
+        private async Task<ICommit> CreateCommitFromDefinitionAsync(
+            WrappedPageBlob blob,
+            PageBlobCommitDefinition commitDefinition,
+            CancellationToken cancellationToken)
         {
             var startIndex = commitDefinition.StartPage * _blobPageSize;
             var endIndex = startIndex + commitDefinition.DataSizeBytes;
-            var downloadedData = blob.DownloadBytes(startIndex, endIndex, true);
+            var downloadedData = await blob
+                .DownloadBytesAsync(
+                    startIndex,
+                    endIndex,
+                    true,
+                    cancellationToken)
+                .ConfigureAwait(false);
+
             using (var ms = new MemoryStream(downloadedData, false))
             {
                 AzureBlobCommit azureBlobCommit;
                 try
-                { azureBlobCommit = _serializer.Deserialize<AzureBlobCommit>(ms); }
+                {
+                    azureBlobCommit = _serializer.Deserialize<AzureBlobCommit>(ms);
+                }
                 catch (Exception ex)
                 {
-                    var message = string.Format("Blob with uri [{0}] is corrupt.", ((CloudPageBlob)blob).Uri);
+                    var message = $"Blob with uri [{((CloudPageBlob)blob).Uri}] is corrupt.";
                     Logger.Fatal(message);
                     throw new InvalidDataException(message, ex);
                 }
@@ -580,9 +778,16 @@ namespace NEventStore.Persistence.AzureBlob
         /// <returns>The populated Commit.</returns>
         private ICommit CreateCommitFromAzureBlobCommit(AzureBlobCommit blobEntry)
         {
-            return new Commit(blobEntry.BucketId, blobEntry.StreamId, blobEntry.StreamRevision, blobEntry.CommitId,
-                                blobEntry.CommitSequence, blobEntry.CommitStampUtc, blobEntry.Checkpoint.ToString(),
-                                blobEntry.Headers, blobEntry.Events);
+            return new Commit(
+                blobEntry.BucketId,
+                blobEntry.StreamId,
+                blobEntry.StreamRevision,
+                blobEntry.CommitId,
+                blobEntry.CommitSequence,
+                blobEntry.CommitStampUtc,
+                blobEntry.Checkpoint.ToString(),
+                blobEntry.Headers,
+                blobEntry.Events);
         }
 
         /// <summary>
@@ -600,12 +805,14 @@ namespace NEventStore.Persistence.AzureBlob
             else if (index == 2)
             { keyToUse = _terciaryHeaderDefintionKey; }
             else
-            { throw new ArgumentException("value must be 0, 1, or 2 for primary, secondary, or terciary respectively.", "index"); }
+            { throw new ArgumentException("value must be 0, 1, or 2 for primary, secondary, or terciary respectively.", nameof(index)); }
 
             HeaderDefinitionMetadata headerDefinition = null;
             string serializedHeaderDefinition;
             if (blob.Metadata.TryGetValue(keyToUse, out serializedHeaderDefinition))
-            { headerDefinition = HeaderDefinitionMetadata.FromRaw(Convert.FromBase64String(serializedHeaderDefinition)); }
+            {
+                headerDefinition = HeaderDefinitionMetadata.FromRaw(Convert.FromBase64String(serializedHeaderDefinition));
+            }
 
             return headerDefinition;
         }
@@ -614,9 +821,11 @@ namespace NEventStore.Persistence.AzureBlob
         /// Gets the deserialized header from the blob.  Uses
         /// </summary>
         /// <param name="blob">The Blob.</param>
-        /// <param name="assumedValidHeaderDefinition">will output the header definition that is valid, null if there is not currently one</param>
-        /// <returns>A populated StreamBlobHeader.</returns>
-        private StreamBlobHeader GetHeaderWithRetry(WrappedPageBlob blob, out HeaderDefinitionMetadata validHeaderDefinition)
+        /// <param name="cancellationToken"></param>
+        /// <returns>A tuple containing the populated StreamBlobHeader and the header definition that is valid, null if there is not currently one.</returns>
+        private async Task<Tuple<StreamBlobHeader, HeaderDefinitionMetadata>> GetHeaderWithRetryAsync(
+            WrappedPageBlob blob,
+            CancellationToken cancellationToken)
         {
             HeaderDefinitionMetadata assumedValidHeaderDefinition = null;
             StreamBlobHeader header = null;
@@ -632,13 +841,22 @@ namespace NEventStore.Persistence.AzureBlob
             // do the fallback logic to try and find a valid header
             if (header == null)
             {
-                for (int i = 0; i != 3; ++i)
+                for (var i = 0; i < 3 && header == null; ++i)
                 {
-                    assumedValidHeaderDefinition = GetHeaderDefinitionMetadata(blob, i);
-                    header = SafeGetHeader(blob, assumedValidHeaderDefinition, out lastException);
+                    cancellationToken.ThrowIfCancellationRequested();
 
-                    if (header != null)
-                    { break; }
+                    assumedValidHeaderDefinition = GetHeaderDefinitionMetadata(blob, i);
+                    try
+                    {
+                        header = await SafeGetHeaderAsync(
+                            blob,
+                            assumedValidHeaderDefinition,
+                            cancellationToken).ConfigureAwait(false);
+                    }
+                    catch (Exception exception)
+                    {
+                        lastException = exception;
+                    }
                 }
             }
 
@@ -649,8 +867,7 @@ namespace NEventStore.Persistence.AzureBlob
             // legacy ones with issue will continue to fail and require manual intervention currently
             if (header == null)
             {
-                string firstWriteCompleted;
-                if (blob.Metadata.TryGetValue(_firstWriteCompletedKey, out firstWriteCompleted))
+                if (blob.Metadata.TryGetValue(_firstWriteCompletedKey, out var firstWriteCompleted))
                 {
                     if (firstWriteCompleted == "f")
                     {
@@ -662,8 +879,7 @@ namespace NEventStore.Persistence.AzureBlob
 
             if (header != null)
             {
-                validHeaderDefinition = assumedValidHeaderDefinition;
-                return header;
+                return new Tuple<StreamBlobHeader, HeaderDefinitionMetadata>(header, assumedValidHeaderDefinition);
             }
 
             throw lastException ?? new Exception("No header could be created"); ;
@@ -674,26 +890,33 @@ namespace NEventStore.Persistence.AzureBlob
         /// </summary>
         /// <param name="blob">blob</param>
         /// <param name="headerDefinition">header definition</param>
-        /// <param name="exception">exception that occured</param>
+        /// <param name="cancellationToken"></param>
         /// <returns>the header, otherwise null if it could not be fetched</returns>
-        private StreamBlobHeader SafeGetHeader(WrappedPageBlob blob, HeaderDefinitionMetadata headerDefinition, out Exception exception)
+        private async Task<StreamBlobHeader> SafeGetHeaderAsync(
+            WrappedPageBlob blob,
+            HeaderDefinitionMetadata headerDefinition,
+            CancellationToken cancellationToken)
         {
             StreamBlobHeader header = null;
-            exception = null;
 
-            try
+            if (headerDefinition == null || headerDefinition.HeaderSizeInBytes == 0)
             {
-                if (headerDefinition == null || headerDefinition.HeaderSizeInBytes == 0)
-                { throw new InvalidHeaderDataException(string.Format("Attempted to download a header, but the size specified is zero.  This aggregate with id [{0}] may be corrupt.", blob.Name)); }
-
-                var downloadedData = blob.DownloadBytes(headerDefinition.HeaderStartLocationOffsetBytes,
-                                    headerDefinition.HeaderStartLocationOffsetBytes + headerDefinition.HeaderSizeInBytes);
-
-                using (var ms = new MemoryStream(downloadedData, false))
-                { header = _serializer.Deserialize<StreamBlobHeader>(ms.ToArray()); }
+                throw new InvalidHeaderDataException(
+                    $"Attempted to download a header, but the size specified is zero.  This aggregate with id [{blob.Name}] may be corrupt.");
             }
-            catch (Exception ex)
-            { exception = ex; }
+
+            var downloadedData = await blob
+                .DownloadBytesAsync(
+                    headerDefinition.HeaderStartLocationOffsetBytes,
+                    headerDefinition.HeaderStartLocationOffsetBytes + headerDefinition.HeaderSizeInBytes,
+                    false,
+                    cancellationToken)
+                .ConfigureAwait(false);
+
+            using (var ms = new MemoryStream(downloadedData, false))
+            {
+                header = _serializer.Deserialize<StreamBlobHeader>(ms.ToArray());
+            }
 
             return header;
         }
@@ -718,10 +941,15 @@ namespace NEventStore.Persistence.AzureBlob
         /// <param name="updatedHeader">the new header to be serialized out</param>
         /// <param name="currentGoodHeaderDefinition">the definition for the current header, before this change is committed</param>
         /// <param name="nonAlignedBytesUsedAlready">non aligned offset of index where last commit data is stored (not inclusive of header)</param>
+        /// <param name="cancellationToken"></param>
         /// <returns></returns>
-        private void CommitNewMessage(WrappedPageBlob blob, byte[] newCommit,
-            StreamBlobHeader updatedHeader, HeaderDefinitionMetadata currentGoodHeaderDefinition,
-            int nonAlignedBytesUsedAlready)
+        private async Task CommitNewMessageAsync(
+            WrappedPageBlob blob,
+            byte[] newCommit,
+            StreamBlobHeader updatedHeader,
+            HeaderDefinitionMetadata currentGoodHeaderDefinition,
+            int nonAlignedBytesUsedAlready,
+            CancellationToken cancellationToken)
         {
             newCommit = newCommit ?? new byte[0];
             var serializedHeader = _serializer.Serialize(updatedHeader);
@@ -733,7 +961,9 @@ namespace NEventStore.Persistence.AzureBlob
             var totalBlobLength = blob.Properties.Length;
             if (totalBlobLength < totalSpaceNeeded)
             {
-                blob.Resize(totalSpaceNeeded);
+                await blob
+                    .ResizeAsync(totalSpaceNeeded, cancellationToken)
+                    .ConfigureAwait(false);
                 totalBlobLength = blob.Properties.Length;
             }
 
@@ -756,13 +986,26 @@ namespace NEventStore.Persistence.AzureBlob
                 blob.Metadata[_firstWriteCompletedKey] = "t";
             }
             else
-            { blob.Metadata[_firstWriteCompletedKey] = "f"; }
+            {
+                blob.Metadata[_firstWriteCompletedKey] = "f";
+            }
 
             blob.Metadata[_primaryHeaderDefinitionKey] = Convert.ToBase64String(headerDefinitionMetadata.GetRaw());
-            blob.SetMetadata();
+            await blob
+                .SetMetadataAsync(cancellationToken)
+                .ConfigureAwait(false);
 
             using (var ms = CreateAndFillStreamAligned(amountToWriteAligned, newCommit, serializedHeader))
-            { blob.Write(ms, writeStartLocationAligned, newHeaderStartLocationNonAligned, currentGoodHeaderDefinition); }
+            {
+                await blob
+                    .WriteAsync(
+                        ms,
+                        writeStartLocationAligned,
+                        newHeaderStartLocationNonAligned,
+                        currentGoodHeaderDefinition,
+                        cancellationToken)
+                    .ConfigureAwait(false);
+            }
 
             // we pay the cost of an extra call for our first ever write (this is effectively creation of the aggregate.
             // we do this because we actually host our header in the blob, but the reference to that header in our metadata.
@@ -773,7 +1016,9 @@ namespace NEventStore.Persistence.AzureBlob
             if (isFirstWrite)
             {
                 blob.Metadata[_firstWriteCompletedKey] = "t";
-                blob.SetMetadata();
+                await blob
+                    .SetMetadataAsync(cancellationToken)
+                    .ConfigureAwait(false);
             }
         }
 
@@ -811,18 +1056,37 @@ namespace NEventStore.Persistence.AzureBlob
         /// </summary>
         /// <returns>The container name.</returns>
         private string GetContainerName()
-        { return _eventSourcePrefix + _options.ContainerName.ToLower(); }
+        {
+            return _eventSourcePrefix + _options.ContainerName.ToLower();
+        }
 
         /// <summary>
         /// Gets the next checkpoint id
         /// </summary>
         /// <returns></returns>
-        private ulong GetNextCheckpoint()
+        private async Task<ulong> GetNextCheckpointAsync(CancellationToken cancellationToken)
         {
             var blobContainer = _blobClient.GetContainerReference(_rootContainerName);
-            var checkpointBlob = WrappedPageBlob.CreateNewIfNotExists(blobContainer, _checkpointBlobName, 1);
-            ((CloudPageBlob)checkpointBlob).SetSequenceNumber(SequenceNumberAction.Increment, null);
-            return (ulong)((CloudPageBlob)checkpointBlob).Properties.PageBlobSequenceNumber.Value;
+
+            var checkpointBlob = await WrappedPageBlob
+                .CreateNewIfNotExistsAsync(
+                    blobContainer,
+                    _checkpointBlobName,
+                    1,
+                    cancellationToken)
+                .ConfigureAwait(false);
+
+            await ((CloudPageBlob)checkpointBlob)
+                .SetSequenceNumberAsync(
+                    SequenceNumberAction.Increment,
+                    null,
+                    cancellationToken)
+                .ConfigureAwait(false);
+
+            return (ulong)((CloudPageBlob)checkpointBlob)
+                .Properties
+                .PageBlobSequenceNumber
+                .Value;
         }
 
         /// <summary>
@@ -835,7 +1099,8 @@ namespace NEventStore.Persistence.AzureBlob
             var tableName = string.Format("chpt{0}{1}", GetContainerName(), commit.BucketId);
             var table = _checkpointTableClient.GetTableReference(tableName);
 
-            Action addCheckpointDelegate = () => {
+            Action addCheckpointDelegate = () =>
+            {
                 var entity = new CheckpointTableEntity(commit);
                 var insertOperation = TableOperation.InsertOrReplace(entity);
                 table.Execute(insertOperation);

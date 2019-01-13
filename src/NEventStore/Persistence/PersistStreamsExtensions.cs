@@ -74,7 +74,7 @@ namespace NEventStore.Persistence
                 throw new ArgumentNullException(nameof(persistStreams));
             }
 
-            return persistStreams.GetFromAsync(cancellationToken, null);
+            return persistStreams.GetFromAsync(0, cancellationToken);
         }
     }
 }

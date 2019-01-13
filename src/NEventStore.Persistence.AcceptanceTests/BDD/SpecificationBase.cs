@@ -1,9 +1,13 @@
-﻿using System;
-using System.Threading.Tasks;
+﻿#if XUNIT
 
 namespace NEventStore.Persistence.AcceptanceTests.BDD
 {
-    public abstract class SpecificationBase
+
+    using Xunit;
+
+
+	[RunWith(typeof (SpecificationBaseRunner))]
+	public abstract class SpecificationBase
     {
         public async Task Execute(Func<Task> actionMethod)
         {
@@ -31,3 +35,5 @@ namespace NEventStore.Persistence.AcceptanceTests.BDD
         }
     }
 }
+
+#endif

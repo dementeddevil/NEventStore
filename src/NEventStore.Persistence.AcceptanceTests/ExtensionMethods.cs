@@ -85,6 +85,34 @@ namespace NEventStore.Persistence.AcceptanceTests
             return commits;
         }
 
+        public static Task<IEnumerable<CommitAttempt>> CommitManyAsync(
+            this IPersistStreams persistence, int numberOfCommits, string streamId, string bucketId)
+        {
+            return CommitManyAsync(persistence, numberOfCommits, streamId, bucketId, CancellationToken.None);
+        }
+
+        public static async Task<IEnumerable<CommitAttempt>> CommitManyAsync(
+            this IPersistStreams persistence, int numberOfCommits, string streamId, string bucketId, CancellationToken cancellationToken)
+        {
+            var commits = new List<CommitAttempt>();
+            CommitAttempt attempt = null;
+
+            for (var i = 0; i < numberOfCommits; i++)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                attempt = attempt == null
+                    ? (streamId ?? Guid.NewGuid().ToString()).BuildAttempt(null, bucketId)
+                    : attempt.BuildNextAttempt();
+
+                await persistence.CommitAsync(attempt, cancellationToken).ConfigureAwait(false);
+
+                commits.Add(attempt);
+            }
+
+            return commits;
+        }
+
         public static CommitAttempt BuildAttempt(this string streamId, DateTime? now = null, string bucketId = null)
         {
             now = now ?? SystemTime.UtcNow;
@@ -96,13 +124,16 @@ namespace NEventStore.Persistence.AcceptanceTests
                 new EventMessage {Body = new SomeDomainEvent {SomeProperty = "Test2"}},
             };
 
-            return new CommitAttempt(bucketId, streamId,
-                2,
-                Guid.NewGuid(),
-                1,
-                now.Value,
-                new Dictionary<string, object> {{"A header", "A string value"}, {"Another header", 2}},
-                messages);
+            return new CommitAttempt(
+                bucketId: bucketId, 
+                streamId: streamId, 
+                streamRevision: 2, 
+                commitId: Guid.NewGuid(), 
+                commitSequence: 1, 
+                commitStamp: now.Value, 
+                headers: new Dictionary<string, object> {{"A header", "A string value"}, {"Another header", 2}}, 
+                events: messages
+            );
         }
 
         public static CommitAttempt BuildNextAttempt(this ICommit commit)

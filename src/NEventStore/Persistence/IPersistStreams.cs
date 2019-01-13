@@ -40,18 +40,19 @@ namespace NEventStore.Persistence
         /// <summary>
         /// Gets all commits after from the specified checkpoint. Use null to get from the beginning.
         /// </summary>
-        /// <param name="cancellationToken">The cancellation token.</param>
         /// <param name="checkpointToken">The checkpoint token.</param>
+        /// <param name="cancellationToken">The cancellation token.</param>
         /// <returns>An enumerable of Commits.</returns>
-        Task<IEnumerable<ICommit>> GetFromAsync(CancellationToken cancellationToken, string checkpointToken = null);
+        Task<IEnumerable<ICommit>> GetFromAsync(Int64 checkpointToken, CancellationToken cancellationToken);
 
         /// <summary>
-        /// Gets a checkpoint object that is comparable with other checkpoints from this storage engine.
+        /// Gets all commits after from the specified checkpoint. Use null to get from the beginning.
         /// </summary>
-        /// <param name="cancellationToken">The cancellation token.</param>
+        /// <param name="bucketId">The value which uniquely identifies bucket the stream belongs to.</param>
         /// <param name="checkpointToken">The checkpoint token.</param>
-        /// <returns>A <see cref="ICheckpoint"/> instance.</returns>
-        Task<ICheckpoint> GetCheckpointAsync(CancellationToken cancellationToken, string checkpointToken = null);
+        /// <param name="cancellationToken">The cancellation token.</param>
+        /// <returns>An enumerable of Commits.</returns>
+        Task<IEnumerable<ICommit>> GetFromAsync(string bucketId, Int64 checkpointToken, CancellationToken cancellationToken);
 
         /// <summary>
         /// Gets all commits on or after from the specified starting time and before the specified end time.
@@ -64,24 +65,6 @@ namespace NEventStore.Persistence
         /// <exception cref="StorageException" />
         /// <exception cref="StorageUnavailableException" />
         Task<IEnumerable<ICommit>> GetFromToAsync(string bucketId, DateTime start, DateTime end, CancellationToken cancellationToken);
-
-        /// <summary>
-        /// Gets a set of commits that has not yet been dispatched.
-        /// </summary>
-        /// <param name="cancellationToken">The cancellation token.</param>
-        /// <returns>The set of commits to be dispatched.</returns>
-        /// <exception cref="StorageException" />
-        /// <exception cref="StorageUnavailableException" />
-        Task<IEnumerable<ICommit>> GetUndispatchedCommitsAsync(CancellationToken cancellationToken);
-
-        /// <summary>
-        /// Marks the commit specified as dispatched.
-        /// </summary>
-        /// <param name="commit">The commit to be marked as dispatched.</param>
-        /// <param name="cancellationToken">The cancellation token.</param>
-        /// <exception cref="StorageException" />
-        /// <exception cref="StorageUnavailableException" />
-        Task MarkCommitAsDispatchedAsync(ICommit commit, CancellationToken cancellationToken);
 
         /// <summary>
         /// Completely DESTROYS the contents of ANY and ALL streams that have

@@ -52,10 +52,5 @@ namespace NEventStore
         /// <exception cref="StorageException" />
         /// <exception cref="StorageUnavailableException" />
         Task<IEventStream> OpenStreamAsync(ISnapshot snapshot, int maxRevision, CancellationToken cancellationToken);
-
-        /// <summary>
-        ///    Starts the dispatch scheduler. If the dispatch scheduler is set to startup automatically, this will not have any affect.
-        /// </summary>
-        void StartDispatchScheduler();
     }
 }

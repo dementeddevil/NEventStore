@@ -7,6 +7,9 @@ using NEventStore.Persistence;
 
 namespace NEventStore.Diagnostics
 {
+    // PerformanceCounters are not cross platform
+
+#if !NETSTANDARD1_6 && !NETSTANDARD2_0
     public class PerformanceCounterPersistenceEngine : IPersistStreams
     {
         private readonly PerformanceCounters _counters;
@@ -37,33 +40,9 @@ namespace NEventStore.Diagnostics
             return commit;
         }
 
-        public async Task MarkCommitAsDispatchedAsync(ICommit commit, CancellationToken cancellationToken)
-        {
-            await _persistence
-                .MarkCommitAsDispatchedAsync(commit, cancellationToken)
-                .ConfigureAwait(false);
-
-            _counters.CountCommitDispatched();
-        }
-
-        public ICheckpoint ParseCheckpoint(string checkpointValue)
-        {
-            return LongCheckpoint.Parse(checkpointValue);
-        }
-
-        public Task<ICheckpoint> GetCheckpointAsync(CancellationToken cancellationToken, string checkpointToken = null)
-        {
-            return _persistence.GetCheckpointAsync(cancellationToken, checkpointToken);
-        }
-
         public Task<IEnumerable<ICommit>> GetFromToAsync(string bucketId, DateTime start, DateTime end, CancellationToken cancellationToken)
         {
             return _persistence.GetFromToAsync(bucketId, start, end, cancellationToken);
-        }
-
-        public Task<IEnumerable<ICommit>> GetUndispatchedCommitsAsync(CancellationToken cancellationToken)
-        {
-            return _persistence.GetUndispatchedCommitsAsync(cancellationToken);
         }
 
         public Task<IEnumerable<ICommit>> GetFromAsync(string bucketId, string streamId, int minRevision, int maxRevision, CancellationToken cancellationToken)
@@ -76,9 +55,14 @@ namespace NEventStore.Diagnostics
             return _persistence.GetFromAsync(bucketId, start, cancellationToken);
         }
 
-        public Task<IEnumerable<ICommit>> GetFromAsync(CancellationToken cancellationToken, string checkpointToken)
+        public Task<IEnumerable<ICommit>> GetFromAsync(Int64 checkpointToken, CancellationToken cancellationToken)
         {
-            return _persistence.GetFromAsync(cancellationToken, checkpointToken);
+            return _persistence.GetFromAsync(checkpointToken, cancellationToken);
+        }
+
+        public Task<IEnumerable<ICommit>> GetFromAsync(string bucketId, Int64 checkpointToken, CancellationToken cancellationToken)
+        {
+            return _persistence.GetFromAsync(bucketId, checkpointToken, cancellationToken);
         }
 
         public async Task<bool> AddSnapshotAsync(ISnapshot snapshot, CancellationToken cancellationToken)
@@ -153,4 +137,5 @@ namespace NEventStore.Diagnostics
             return _persistence;
         }
     }
+#endif
 }

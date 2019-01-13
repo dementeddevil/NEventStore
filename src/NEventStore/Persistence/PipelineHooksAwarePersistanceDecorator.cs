@@ -1,11 +1,11 @@
+using System;
+using System.Collections.Generic;
+using System.Threading;
+using System.Threading.Tasks;
+using NEventStore.Logging;
+
 namespace NEventStore.Persistence
 {
-    using System;
-    using System.Collections.Generic;
-    using System.Threading;
-    using System.Threading.Tasks;
-    using NEventStore.Logging;
-
     public class PipelineHooksAwarePersistanceDecorator : IPersistStreams
     {
         private static readonly ILog Logger = LogFactory.BuildLogger(typeof(PipelineHooksAwarePersistanceDecorator));
@@ -70,18 +70,22 @@ namespace NEventStore.Persistence
                 cancellationToken).ConfigureAwait(false);
         }
 
-        public async Task<IEnumerable<ICommit>> GetFromAsync(CancellationToken cancellationToken, string checkpointToken)
+        public async Task<IEnumerable<ICommit>> GetFromAsync(Int64 checkpointToken, CancellationToken cancellationToken)
         {
             return await ExecuteHooks(
                 await _original
-                    .GetFromAsync(cancellationToken, checkpointToken)
+                    .GetFromAsync(checkpointToken, cancellationToken)
                     .ConfigureAwait(false),
                 cancellationToken).ConfigureAwait(false);
         }
 
-        public Task<ICheckpoint> GetCheckpointAsync(CancellationToken cancellationToken, string checkpointToken)
+        public async Task<IEnumerable<ICommit>> GetFromAsync(string bucketId, Int64 checkpointToken, CancellationToken cancellationToken)
         {
-            return _original.GetCheckpointAsync(cancellationToken, checkpointToken);
+            return await ExecuteHooks(
+                await _original
+                    .GetFromAsync(bucketId, checkpointToken, cancellationToken)
+                    .ConfigureAwait(false),
+                cancellationToken).ConfigureAwait(false);
         }
 
         public async Task<IEnumerable<ICommit>> GetFromToAsync(string bucketId, DateTime start, DateTime end, CancellationToken cancellationToken)
@@ -91,20 +95,6 @@ namespace NEventStore.Persistence
                     .GetFromToAsync(bucketId, start, end, cancellationToken)
                     .ConfigureAwait(false),
                 cancellationToken).ConfigureAwait(false);
-        }
-
-        public async Task<IEnumerable<ICommit>> GetUndispatchedCommitsAsync(CancellationToken cancellationToken)
-        {
-            return await ExecuteHooks(
-                await _original
-                    .GetUndispatchedCommitsAsync(cancellationToken)
-                    .ConfigureAwait(false),
-                cancellationToken).ConfigureAwait(false);
-        }
-
-        public Task MarkCommitAsDispatchedAsync(ICommit commit, CancellationToken cancellationToken)
-        {
-            return _original.MarkCommitAsDispatchedAsync(commit, cancellationToken);
         }
 
         public async Task PurgeAsync(CancellationToken cancellationToken)

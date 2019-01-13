@@ -36,7 +36,7 @@ namespace NEventStore
 
             if (minRevision > 0 && _committed.Count == 0)
             {
-                throw new StreamNotFoundException();
+                throw new StreamNotFoundException(String.Format(Messages.StreamNotFoundException, streamId, BucketId));
             }
         }
 
@@ -68,22 +68,27 @@ namespace NEventStore
 
         public void Add(EventMessage uncommittedEvent)
         {
-            if (uncommittedEvent?.Body == null)
+            if (uncommittedEvent == null)
             {
-                return;
+                throw new ArgumentNullException("uncommittedEvent");
             }
 
-            Logger.Debug(Resources.AppendingUncommittedToStream, StreamId);
+            if (uncommittedEvent.Body == null)
+            {
+                throw new ArgumentNullException("uncommittedEvent.Body");
+            }
+
+            Logger.Verbose(Resources.AppendingUncommittedToStream, uncommittedEvent.Body.GetType(), StreamId);
             _events.Add(uncommittedEvent);
         }
 
         public async Task CommitChangesAsync(Guid commitId, CancellationToken cancellationToken)
         {
-            Logger.Debug(Resources.AttemptingToCommitChanges, StreamId);
+            Logger.Verbose(Resources.AttemptingToCommitChanges, StreamId);
 
             if (_identifiers.Contains(commitId))
             {
-                throw new DuplicateCommitException();
+                throw new DuplicateCommitException(String.Format(Messages.DuplicateCommitIdException, commitId));
             }
 
             if (!HasChanges())
@@ -95,9 +100,9 @@ namespace NEventStore
             {
                 await PersistChanges(commitId, cancellationToken).ConfigureAwait(false);
             }
-            catch (ConcurrencyException)
+            catch (ConcurrencyException cex)
             {
-                Logger.Info(Resources.UnderlyingStreamHasChanged, StreamId);
+                Logger.Debug(Resources.UnderlyingStreamHasChanged, StreamId);
                 var commits = _persistence
                     .GetFromAsync(BucketId, StreamId, StreamRevision + 1, int.MaxValue, cancellationToken)
                     .GetAwaiter().GetResult();
@@ -109,7 +114,7 @@ namespace NEventStore
 
         public void ClearChanges()
         {
-            Logger.Debug(Resources.ClearingUncommittedChanges, StreamId);
+            Logger.Verbose(Resources.ClearingUncommittedChanges, StreamId);
             _events.Clear();
             UncommittedHeaders.Clear();
         }
@@ -174,7 +179,7 @@ namespace NEventStore
                 return true;
             }
 
-            Logger.Warn(Resources.NoChangesToCommit, StreamId);
+            Logger.Info(Resources.NoChangesToCommit, StreamId);
             return false;
         }
 
@@ -193,7 +198,7 @@ namespace NEventStore
 
         private CommitAttempt BuildCommitAttempt(Guid commitId)
         {
-            Logger.Debug(Resources.BuildingCommitAttempt, commitId, StreamId);
+            Logger.Verbose(Resources.BuildingCommitAttempt, commitId, StreamId);
             return new CommitAttempt(
                 BucketId,
                 StreamId,

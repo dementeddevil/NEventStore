@@ -1,18 +1,29 @@
 #pragma warning disable 169
 // ReSharper disable InconsistentNaming
 
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Threading;
-using System.Threading.Tasks;
-using FluentAssertions;
-using NEventStore.Diagnostics;
-using NEventStore.Persistence.AcceptanceTests.BDD;
-using Xunit;
-
 namespace NEventStore.Persistence.AcceptanceTests
 {
+    using System;
+    using System.Collections.Generic;
+    using System.Linq;
+    using System.Threading;
+    using System.Threading.Tasks;
+    using NEventStore.Persistence.AcceptanceTests.BDD;
+    using FluentAssertions;
+#if MSTEST
+    using Microsoft.VisualStudio.TestTools.UnitTesting;
+#endif
+#if NUNIT
+    using NUnit.Framework;
+#endif
+#if XUNIT
+    using Xunit;
+    using Xunit.Should;
+#endif
+
+#if MSTEST
+    [TestClass]
+#endif
     public class when_a_commit_header_has_a_name_that_contains_a_period : PersistenceEngineConcern
     {
         private ICommit _persisted;
@@ -50,6 +61,9 @@ namespace NEventStore.Persistence.AcceptanceTests
         }
     }
 
+#if MSTEST
+    [TestClass]
+#endif
     public class when_a_commit_is_successfully_persisted : PersistenceEngineConcern
     {
         private CommitAttempt _attempt;
@@ -150,18 +164,6 @@ namespace NEventStore.Persistence.AcceptanceTests
         }
 
         [Fact]
-        public Task should_add_the_commit_to_the_set_of_undispatched_commits()
-        {
-            return Execute(
-                async () =>
-                {
-                    (await Persistence.GetUndispatchedCommitsAsync(CancellationToken.None))
-                        .FirstOrDefault(x => x.CommitId == _attempt.CommitId)
-                        .Should().NotBeNull();
-                });
-        }
-
-        [Fact]
         public Task should_cause_the_stream_to_be_found_in_the_list_of_streams_to_snapshot()
         {
             return Execute(
@@ -174,6 +176,9 @@ namespace NEventStore.Persistence.AcceptanceTests
         }
     }
 
+#if MSTEST
+    [TestClass]
+#endif
     public class when_reading_from_a_given_revision : PersistenceEngineConcern
     {
         private const int LoadFromCommitContainingRevision = 3;
@@ -221,6 +226,9 @@ namespace NEventStore.Persistence.AcceptanceTests
         }
     }
 
+#if MSTEST
+    [TestClass]
+#endif
     public class when_reading_from_a_given_revision_to_commit_revision : PersistenceEngineConcern
     {
         private const int LoadFromCommitContainingRevision = 3;
@@ -270,6 +278,9 @@ namespace NEventStore.Persistence.AcceptanceTests
         }
     }
 
+#if MSTEST
+    [TestClass]
+#endif
     public class when_committing_a_stream_with_the_same_revision : PersistenceEngineConcern
     {
         private CommitAttempt _attemptWithSameRevision;
@@ -302,6 +313,9 @@ namespace NEventStore.Persistence.AcceptanceTests
     }
 
     //TODO:This test looks exactly like the one above. What are we trying to prove?
+#if MSTEST
+    [TestClass]
+#endif
     public class when_committing_a_stream_with_the_same_sequence : PersistenceEngineConcern
     {
         private CommitAttempt _attempt1, _attempt2;
@@ -337,6 +351,9 @@ namespace NEventStore.Persistence.AcceptanceTests
     }
 
     //TODO:This test looks exactly like the one above. What are we trying to prove?
+#if MSTEST
+    [TestClass]
+#endif
     public class when_attempting_to_overwrite_a_committed_sequence : PersistenceEngineConcern
     {
         private CommitAttempt _failedAttempt;
@@ -370,6 +387,9 @@ namespace NEventStore.Persistence.AcceptanceTests
         }
     }
 
+#if MSTEST
+    [TestClass]
+#endif
     public class when_attempting_to_persist_a_commit_twice : PersistenceEngineConcern
     {
         private CommitAttempt _attemptTwice;
@@ -409,6 +429,9 @@ namespace NEventStore.Persistence.AcceptanceTests
         }
     }
 
+#if MSTEST
+    [TestClass]
+#endif
     public class when_a_commit_has_been_marked_as_dispatched : PersistenceEngineConcern
     {
         private ICommit _commit;
@@ -420,24 +443,11 @@ namespace NEventStore.Persistence.AcceptanceTests
         {
             _commit = await Persistence.CommitSingleAsync();
         }
-
-        protected override Task Because()
-        {
-            return Persistence.MarkCommitAsDispatchedAsync(_commit, CancellationToken.None);
-        }
-
-        [Fact]
-        public Task should_no_longer_be_found_in_the_set_of_undispatched_commits()
-        {
-            return Execute(
-                async () =>
-                {
-                    (await Persistence.GetUndispatchedCommitsAsync(CancellationToken.None))
-                        .FirstOrDefault(x => x.CommitId == _commit.CommitId).Should().BeNull();
-                });
-        }
     }
 
+#if MSTEST
+    [TestClass]
+#endif
     public class when_committing_more_events_than_the_configured_page_size : PersistenceEngineConcern
     {
         private CommitAttempt[] _committed;
@@ -482,6 +492,9 @@ namespace NEventStore.Persistence.AcceptanceTests
         }
     }
 
+#if MSTEST
+    [TestClass]
+#endif
     public class when_saving_a_snapshot : PersistenceEngineConcern
     {
         private bool _added;
@@ -525,6 +538,9 @@ namespace NEventStore.Persistence.AcceptanceTests
         }
     }
 
+#if MSTEST
+    [TestClass]
+#endif
     public class when_retrieving_a_snapshot : PersistenceEngineConcern
     {
         private ISnapshot _correct;
@@ -573,6 +589,9 @@ namespace NEventStore.Persistence.AcceptanceTests
         }
     }
 
+#if MSTEST
+    [TestClass]
+#endif
     public class when_a_snapshot_has_been_added_to_the_most_recent_commit_of_a_stream : PersistenceEngineConcern
     {
         private const string SnapshotData = "snapshot";
@@ -608,6 +627,9 @@ namespace NEventStore.Persistence.AcceptanceTests
         }
     }
 
+#if MSTEST
+    [TestClass]
+#endif
     public class when_adding_a_commit_after_a_snapshot : PersistenceEngineConcern
     {
         private const int WithinThreshold = 2;
@@ -656,6 +678,9 @@ namespace NEventStore.Persistence.AcceptanceTests
         }
     }
 
+#if MSTEST
+    [TestClass]
+#endif
     public class when_reading_all_commits_from_a_particular_point_in_time : PersistenceEngineConcern
     {
         private ICommit[] _committed;
@@ -698,6 +723,9 @@ namespace NEventStore.Persistence.AcceptanceTests
         }
     }
 
+#if MSTEST
+    [TestClass]
+#endif
     public class when_paging_over_all_commits_from_a_particular_point_in_time : PersistenceEngineConcern
     {
         private CommitAttempt[] _committed;
@@ -747,6 +775,9 @@ namespace NEventStore.Persistence.AcceptanceTests
         }
     }
 
+#if MSTEST
+    [TestClass]
+#endif
     public class when_paging_over_all_commits_from_a_particular_checkpoint : PersistenceEngineConcern
     {
         private List<Guid> _committed;
@@ -765,7 +796,7 @@ namespace NEventStore.Persistence.AcceptanceTests
 
         protected override async Task Because()
         {
-            _loaded = (await Persistence.GetFromAsync(CancellationToken.None, checkPoint.ToString()))
+            _loaded = (await Persistence.GetFromAsync(checkPoint, CancellationToken.None))
                 .Select(c => c.CommitId).ToList();
         }
 
@@ -790,6 +821,9 @@ namespace NEventStore.Persistence.AcceptanceTests
         }
     }
 
+#if MSTEST
+    [TestClass]
+#endif
     public class when_reading_all_commits_from_the_year_1_AD : PersistenceEngineConcern
     {
         private Exception _thrown;
@@ -815,6 +849,9 @@ namespace NEventStore.Persistence.AcceptanceTests
         }
     }
 
+#if MSTEST
+    [TestClass]
+#endif
     public class when_purging_all_commits : PersistenceEngineConcern
     {
         public when_purging_all_commits(PersistenceEngineFixture fixtureData) : base(fixtureData)
@@ -851,19 +888,11 @@ namespace NEventStore.Persistence.AcceptanceTests
                         .Count().Should().Be(0);
                 });
         }
-
-        [Fact]
-        public Task should_not_find_any_undispatched_commits()
-        {
-            return Execute(
-                async () =>
-                {
-                    (await Persistence.GetUndispatchedCommitsAsync(CancellationToken.None))
-                        .Count().Should().Be(0);
-                });
-        }
     }
 
+#if MSTEST
+    [TestClass]
+#endif
     public class when_invoking_after_disposal : PersistenceEngineConcern
     {
         private Exception _thrown;
@@ -894,6 +923,9 @@ namespace NEventStore.Persistence.AcceptanceTests
         }
     }
 
+#if MSTEST
+    [TestClass]
+#endif
     public class when_committing_a_stream_with_the_same_id_as_a_stream_in_another_bucket : PersistenceEngineConcern
     {
         const string _bucketAId = "a";
@@ -959,13 +991,16 @@ namespace NEventStore.Persistence.AcceptanceTests
         }
     }
 
+#if MSTEST
+    [TestClass]
+#endif
     public class when_saving_a_snapshot_for_a_stream_with_the_same_id_as_a_stream_in_another_bucket : PersistenceEngineConcern
     {
         const string _bucketAId = "a";
         const string _bucketBId = "b";
 
         string _streamId;
-        
+
         private static Snapshot _snapshot;
 
         public when_saving_a_snapshot_for_a_stream_with_the_same_id_as_a_stream_in_another_bucket(PersistenceEngineFixture fixtureData) : base(fixtureData)
@@ -996,6 +1031,9 @@ namespace NEventStore.Persistence.AcceptanceTests
         }
     }
 
+#if MSTEST
+    [TestClass]
+#endif
     public class when_reading_all_commits_from_a_particular_point_in_time_and_there_are_streams_in_multiple_buckets : PersistenceEngineConcern
     {
         const string _bucketAId = "a";
@@ -1028,7 +1066,7 @@ namespace NEventStore.Persistence.AcceptanceTests
         {
             _returnedCommits = (await Persistence.GetFromAsync(_bucketAId, _now, CancellationToken.None)).ToArray();
         }
-        
+
         [Fact]
         public Task should_not_return_commits_from_other_buckets()
         {
@@ -1040,6 +1078,9 @@ namespace NEventStore.Persistence.AcceptanceTests
         }
     }
 
+#if MSTEST
+    [TestClass]
+#endif
     public class when_getting_all_commits_since_checkpoint_and_there_are_streams_in_multiple_buckets : PersistenceEngineConcern
     {
         private ICommit[] _commits;
@@ -1079,25 +1120,19 @@ namespace NEventStore.Persistence.AcceptanceTests
         [Fact]
         public async Task should_be_in_order_by_checkpoint()
         {
-            var checkpoint = await Persistence
-                .GetCheckpointAsync(CancellationToken.None)
-                .ConfigureAwait(false);
-
+            Int64 checkpoint = 0;
             foreach (var commit in _commits)
             {
-                var commitCheckpoint = await Persistence
-                    .GetCheckpointAsync(CancellationToken.None, commit.CheckpointToken)
-                    .ConfigureAwait(false);
-
+                Int64 commitCheckpoint = commit.CheckpointToken;
                 commitCheckpoint.Should().BeGreaterThan(checkpoint);
-
-                checkpoint = await Persistence
-                    .GetCheckpointAsync(CancellationToken.None, commit.CheckpointToken)
-                    .ConfigureAwait(false);
+                checkpoint = commit.CheckpointToken;
             }
         }
     }
 
+#if MSTEST
+    [TestClass]
+#endif
     public class when_purging_all_commits_and_there_are_streams_in_multiple_buckets : PersistenceEngineConcern
     {
         const string _bucketAId = "a";
@@ -1162,18 +1197,17 @@ namespace NEventStore.Persistence.AcceptanceTests
                         .Should().Be(0);
                 });
         }
-
-        [Fact]
-        public Task should_purge_all_undispatched_commits()
-        {
-            return Execute(
-                async () =>
-                {
-                    (await Persistence.GetUndispatchedCommitsAsync(CancellationToken.None)).Count().Should().Be(0);
-                });
-        }
     }
 
+    [Serializable]
+    public class Pippo
+    {
+        public String S { get; set; }
+    }
+
+#if MSTEST
+    [TestClass]
+#endif
     public class when_gettingfromcheckpoint_amount_of_commits_exceeds_pagesize : PersistenceEngineConcern
     {
         private ICommit[] _commits;
@@ -1192,13 +1226,13 @@ namespace NEventStore.Persistence.AcceptanceTests
             {
                 using (var stream = await eventStore.OpenStreamAsync(Guid.NewGuid(), CancellationToken.None))
                 {
-                    stream.Add(new EventMessage { Body = i });
+                    stream.Add(new EventMessage { Body = new Pippo() { S = "Hi " + i } });
                     await stream.CommitChangesAsync(Guid.NewGuid(), CancellationToken.None);
                 }
             }
 
             var commits = (await Persistence.GetFromAsync(DateTime.MinValue, CancellationToken.None)).ToArray();
-            _commits = (await Persistence.GetFromAsync(CancellationToken.None)).ToArray();
+            _commits = (await Persistence.GetFromAsync(0, CancellationToken.None)).ToArray();
         }
 
         [Fact]
@@ -1211,12 +1245,14 @@ namespace NEventStore.Persistence.AcceptanceTests
                 });
         }
     }
-    
-    /* Commented out because it's not a scenario we're supporting
-     * public class TransactionConcern : SpecificationBase, IUseFixture<PersistenceEngineFixture>
+
+    /*
+#if MSTEST
+    [TestClass]
+#endif
+    public class TransactionConcern : PersistenceEngineConcern
     {
         private ICommit[] _commits;
-        private PersistenceEngineFixture _fixture;
         private const int Loop = 2;
         private const int StreamsPerTransaction = 20;
 
@@ -1224,7 +1260,7 @@ namespace NEventStore.Persistence.AcceptanceTests
         {
             Parallel.For(0, Loop, i =>
             {
-                var eventStore = new OptimisticEventStore(_fixture.Persistence, null);
+                var eventStore = new OptimisticEventStore(Persistence, null);
                 using (var scope = new TransactionScope(TransactionScopeOption.Required,
                     new TransactionOptions {IsolationLevel = IsolationLevel.Serializable}))
                 {
@@ -1243,7 +1279,7 @@ namespace NEventStore.Persistence.AcceptanceTests
                     scope.Complete();
                 }
             });
-            _commits = _fixture.Persistence.GetFrom(null).ToArray();
+            _commits = Persistence.GetFrom().ToArray();
         }
 
         [Fact]
@@ -1252,10 +1288,11 @@ namespace NEventStore.Persistence.AcceptanceTests
             _commits.Length.Should().Be(Loop * StreamsPerTransaction);
         }
 
-        /* [Fact]
+        [Fact]
         public void ScopeCompleteAndSerializable()
         {
-            int loop = 10;
+            Reinitialize();
+            const int loop = 10;
             using (var scope = new TransactionScope(
                 TransactionScopeOption.Required,
                 new TransactionOptions
@@ -1266,7 +1303,7 @@ namespace NEventStore.Persistence.AcceptanceTests
                 Parallel.For(0, loop, i =>
                 {
                     Console.WriteLine("Creating stream {0} on thread {1}", i, Thread.CurrentThread.ManagedThreadId);
-                    var eventStore = new OptimisticEventStore(_fixture.Persistence, null);
+                    var eventStore = new OptimisticEventStore(Persistence, null);
                     string streamId = i.ToString(CultureInfo.InvariantCulture);
                     using (var stream = eventStore.OpenStream(streamId))
                     {
@@ -1277,16 +1314,17 @@ namespace NEventStore.Persistence.AcceptanceTests
                 });
                 scope.Complete();
             }
-            ICheckpoint checkpoint = _fixture.Persistence.GetCheckpoint();
-            ICommit[] commits = _fixture.Persistence.GetFrom(checkpoint.Value).ToArray();
+            ICheckpoint checkpoint = Persistence.GetCheckpoint();
+            ICommit[] commits = Persistence.GetFrom(checkpoint.Value).ToArray();
             commits.Length.Should().Be(loop);
         }
 
         [Fact]
         public void ScopeNotCompleteAndReadCommitted()
         {
-            int loop = 10;
-            using (var scope = new TransactionScope(
+            Reinitialize();
+            const int loop = 10;
+            using(new TransactionScope(
                 TransactionScopeOption.Required,
                 new TransactionOptions
                 {
@@ -1295,8 +1333,8 @@ namespace NEventStore.Persistence.AcceptanceTests
             {
                 Parallel.For(0, loop, i =>
                 {
-                    Console.WriteLine("Creating stream {0} on thread {1}", i, Thread.CurrentThread.ManagedThreadId);
-                    var eventStore = new OptimisticEventStore(_fixture.Persistence, null);
+                    Console.WriteLine(@"Creating stream {0} on thread {1}", i, Thread.CurrentThread.ManagedThreadId);
+                    var eventStore = new OptimisticEventStore(Persistence, null);
                     string streamId = i.ToString(CultureInfo.InvariantCulture);
                     using (var stream = eventStore.OpenStream(streamId))
                     {
@@ -1306,16 +1344,17 @@ namespace NEventStore.Persistence.AcceptanceTests
                     }
                 });
             }
-            ICheckpoint checkpoint = _fixture.Persistence.GetCheckpoint();
-            ICommit[] commits = _fixture.Persistence.GetFrom(checkpoint.Value).ToArray();
+            ICheckpoint checkpoint = Persistence.GetCheckpoint();
+            ICommit[] commits = Persistence.GetFrom(checkpoint.Value).ToArray();
             commits.Length.Should().Be(0);
         }
 
         [Fact]
         public void ScopeNotCompleteAndSerializable()
         {
-            int loop = 10;
-            using (var scope = new TransactionScope(
+            Reinitialize();
+            const int loop = 10;
+            using(new TransactionScope(
                 TransactionScopeOption.Required,
                 new TransactionOptions
                 {
@@ -1324,8 +1363,8 @@ namespace NEventStore.Persistence.AcceptanceTests
             {
                 Parallel.For(0, loop, i =>
                 {
-                    Console.WriteLine("Creating stream {0} on thread {1}", i, Thread.CurrentThread.ManagedThreadId);
-                    var eventStore = new OptimisticEventStore(_fixture.Persistence, null);
+                    Console.WriteLine(@"Creating stream {0} on thread {1}", i, Thread.CurrentThread.ManagedThreadId);
+                    var eventStore = new OptimisticEventStore(Persistence, null);
                     string streamId = i.ToString(CultureInfo.InvariantCulture);
                     using (var stream = eventStore.OpenStream(streamId))
                     {
@@ -1335,17 +1374,16 @@ namespace NEventStore.Persistence.AcceptanceTests
                     }
                 });
             }
-            ICheckpoint checkpoint = _fixture.Persistence.GetCheckpoint();
-            ICommit[] commits = _fixture.Persistence.GetFrom(checkpoint.Value).ToArray();
+            ICheckpoint checkpoint = Persistence.GetCheckpoint();
+            ICommit[] commits = Persistence.GetFrom(checkpoint.Value).ToArray();
             commits.Length.Should().Be(0);
-        }#1#
-
-        public void SetFixture(PersistenceEngineFixture data)
-        {
-            _fixture = data;
         }
-    }*/
+    }
+    */
 
+#if MSTEST
+    [TestClass]
+#endif
     public class when_a_payload_is_large : PersistenceEngineConcern
     {
         public when_a_payload_is_large(PersistenceEngineFixture fixtureData) : base(fixtureData)
@@ -1369,15 +1407,87 @@ namespace NEventStore.Persistence.AcceptanceTests
                         new List<EventMessage> {new EventMessage { Body = new string('a', bodyLength) } });
                     await Persistence.CommitAsync(attempt, CancellationToken.None).ConfigureAwait(false);
 
-                    var commits = (await Persistence.GetFromAsync(CancellationToken.None)).Single();
+                    var commits = (await Persistence.GetFromAsync(0, CancellationToken.None)).Single();
                     commits.Events.Single().Body.ToString().Length.Should().Be(bodyLength);
                 });
         }
     }
 
-    public class PersistenceEngineConcern : SpecificationBase, IClassFixture<PersistenceEngineFixture>
+    /// <summary>
+    /// We are adapting the tests to use 3 different frameworks:
+    /// - XUnit: the attached test runner does the job (fixture setup and cleanup)
+    /// - NUnit (.net core project)
+    /// - MSTest (.net core project)
+    /// </summary>
+    public abstract class PersistenceEngineConcern : SpecificationBase
+#if XUNIT
+        , IUseFixture<PersistenceEngineFixture>
+#endif
+#if NUNIT || MSTEST
+        , IDisposable
+#endif
     {
         private readonly PersistenceEngineFixture _fixture;
+
+        protected IPersistStreams Persistence
+        {
+            get { return _fixture.Persistence; }
+        }
+
+        protected int ConfiguredPageSizeForTesting
+        {
+            get { return 2; }
+        }
+
+        protected void Reinitialize()
+        {
+            _fixture.Initialize(ConfiguredPageSizeForTesting, CancellationToken.None);
+        }
+
+#if XUNIT
+        public void SetFixture(PersistenceEngineFixture data)
+        {
+            _fixture = data;
+            _fixture.Initialize(ConfiguredPageSizeForTesting, CancellationToken.None)
+                .GetAwaiter().GetResult();
+        }
+#endif
+
+#if NUNIT || MSTEST
+        public void Dispose()
+        {
+            if (_fixture != null)
+            {
+                _fixture.Dispose();
+            }
+        }
+
+        /// <summary>
+        /// This code was meant to be run right before every test in the fixture to give time
+        /// to do further initialization before the PersistenceEngineFixture was created.
+        /// Unfortunately the 3 frameworks
+        /// have very different ways of doing this: 
+        /// - NUnit: TestFixtureSetUp
+        /// - MSTest: ClassInitialize (not inherited, will be ignored if defined on a base class)
+        /// - xUnit: IUseFixture + SetFixture
+        /// We need a way to also have some configuration before the PersistenceEngineFixture is created.
+        /// 
+        /// We'de decided to use the test constructor to do the job, it's your responsibility to guarantee
+        /// One time initialization (for anything that need it, if you have multiple tests on a fixture)
+        /// depending on the framework you are using.
+        /// 
+        /// We can solve the also adding an optional 'config' delegate to be executed as the first line in this base constructor.
+        /// 
+        /// quick workaround:
+        /// - the 'Reinitialize()' method can be called to rerun the initialization after we changed the configuration
+        /// in the constructor
+        /// </summary>
+        protected PersistenceEngineConcern()
+        {
+            _fixture = new PersistenceEngineFixture();
+            _fixture.Initialize(ConfiguredPageSizeForTesting, CancellationToken.None)
+                .GetAwaiter().GetResult();
+        }
 
         public PersistenceEngineConcern(PersistenceEngineFixture fixtureData)
         {
@@ -1385,17 +1495,32 @@ namespace NEventStore.Persistence.AcceptanceTests
             _fixture.Initialize(ConfiguredPageSizeForTesting, CancellationToken.None)
                 .GetAwaiter().GetResult();
         }
-
-        protected IPersistStreams Persistence => _fixture.Persistence;
-
-        protected int ConfiguredPageSizeForTesting => 2;
+#endif
     }
 
     public partial class PersistenceEngineFixture : IDisposable
     {
-#pragma warning disable 649
         private readonly Func<int, IPersistStreams> _createPersistence;
-#pragma warning restore 649
+
+#if !NETSTANDARD1_6 && !NETSTANDARD2_0
+        private bool _tracking = false;
+        private string _trackingInstanceName;
+
+        /// <summary>
+        /// Automatic Performance Counters and tracking was disabled for full
+        /// framework tests because their initialization
+        /// can fail when the tests run on build machines (like AppVeyor and similar).
+        /// You can enable it back calling this function before <see cref="Initialize(int)"/>
+        /// </summary>
+        /// <param name="instanceName"></param>
+        /// <returns></returns>
+        public PersistenceEngineFixture TrackPerformanceInstance(string instanceName = "tests")
+        {
+            _trackingInstanceName = instanceName;
+            _tracking = true;
+            return this;
+        }
+#endif
 
         public async Task Initialize(int pageSize, CancellationToken cancellationToken)
         {
@@ -1406,9 +1531,20 @@ namespace NEventStore.Persistence.AcceptanceTests
                 Persistence = null;
             }
 
-            cancellationToken.ThrowIfCancellationRequested();
-
-            Persistence = new PerformanceCounterPersistenceEngine(_createPersistence(pageSize), "tests");
+#if !NETSTANDARD1_6 && !NETSTANDARD2_0
+            // performance counters cab be disabled for full framework tests because their initialization
+            // can fail when the tests run on build machines (like AppVeyor and similar)
+            if (_tracking)
+            {
+                Persistence = new NEventStore.Diagnostics.PerformanceCounterPersistenceEngine(_createPersistence(pageSize), _trackingInstanceName);
+            }
+            else
+            {
+                Persistence = _createPersistence(pageSize);
+            }
+#else
+            Persistence = _createPersistence(pageSize);
+#endif
             await Persistence.InitializeAsync(cancellationToken);
         }
 

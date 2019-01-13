@@ -6,7 +6,7 @@ when using event sourcing as storage mechanism. This library is developed with a
 
 NEventStore currently supports:
 
-- dotnet framework 4.5
+- dotnet framework 4.6
 - dotnet standard 2.0, dotnet core 2.0 
 
 Build Status (AppVeyor)

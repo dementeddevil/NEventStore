@@ -6,12 +6,12 @@
     <AssemblyName>NEventStoreAsync.Serialization.Json</AssemblyName>
   </PropertyGroup>
   <PropertyGroup>
-    <PackageId>NEventStore.Serialization.Json</PackageId>
-    <Title>NEventStore Json Serializers</Title>
-    <Authors>NEventStore Dev Team</Authors>
-    <PackageProjectUrl>http://neventstore.org</PackageProjectUrl>
+    <PackageId>NEventStoreAsync.Serialization.Json</PackageId>
+    <Title>NEventStoreAsync Json Serializers</Title>
+    <Authors>NEventStore Dev Team;Adrian Lewis</Authors>
+    <PackageProjectUrl>https://github.com/dementeddevil/NEventStoreAsync</PackageProjectUrl>
     <PackageRequireLicenseAcceptance>false</PackageRequireLicenseAcceptance>
-    <Description>This package contains Json and Bson serializers for NEventStore library. These serializers were removed from the core package to limit dependencies from external libraries.</Description>
+    <Description>This package contains Json and Bson serializers for NEventStoreAsync library. These serializers were removed from the core package to limit dependencies from external libraries.</Description>
     <PackageTags>events, event sourcing, cqrs, storage, persistence, database</PackageTags>
     <PackageReleaseNotes></PackageReleaseNotes>
   </PropertyGroup>

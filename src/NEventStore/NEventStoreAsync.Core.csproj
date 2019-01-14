@@ -7,14 +7,14 @@
     <GeneratePackageOnBuild>false</GeneratePackageOnBuild>
   </PropertyGroup>
   <PropertyGroup>
-    <PackageId>NEventStore</PackageId>
-    <Title>NEventStore</Title>
-    <Authors>NEventStore Dev Team</Authors>
-    <PackageProjectUrl>http://neventstore.org</PackageProjectUrl>
+    <PackageId>NEventStoreAsync</PackageId>
+    <Title>NEventStoreAsync</Title>
+    <Authors>NEventStore Dev Team;Adrian Lewis</Authors>
+    <PackageProjectUrl>https://github.com/dementeddevil/NEventStoreAsync</PackageProjectUrl>
     <PackageRequireLicenseAcceptance>false</PackageRequireLicenseAcceptance>
-    <Description>The purpose of the EventStore is to represent a series of events as a stream. NEventStore is a persistence agnostic event sourcing library for .NET. The primary use is most often associated with CQRS.</Description>
+    <Description>The purpose of an Event Store is to represent a series of events as a stream.</Description>
     <PackageTags>events, event sourcing, cqrs, storage, persistence, database</PackageTags>
-    <PackageReleaseNotes>v6.x is not backwards compatible with v5.x. Please check the release notes on github.</PackageReleaseNotes>
+    <PackageReleaseNotes>v6.x is not backwards compatible with v5.x. This package is similar to but incompatible with NEventStore! Please check the release notes on github.</PackageReleaseNotes>
   </PropertyGroup>
   <PropertyGroup Condition="'$(TargetFramework)' == 'netstandard2.0'">
     <DefineConstants Condition="'$(Configuration)|$(Platform)'=='Debug|AnyCPU'">TRACE;DEBUG;NETSTANDARD2_0</DefineConstants>

@@ -73,14 +73,14 @@ namespace NEventStore.Client
         /// to setup Health check that verify if the poller is really active and it is really loading new commits.
         /// This value is obtained with DateTime.UtcNow
         /// </summary>
-        public DateTime LastActivityTimestamp { get { return _lastActivityTimestamp; } }
+        public DateTime LastActivityTimestamp => _lastActivityTimestamp;
 
         /// <summary>
         /// If poller encounter an exception it immediately retry, but we need to tell to the caller code
         /// that the last polling encounter an error. This is needed to detect a poller stuck as an example
         /// with deserialization problems.
         /// </summary>
-        public String LastPollingError { get { return _lastPollingError; } }
+        public String LastPollingError => _lastPollingError;
 
         public void StartFrom(Int64 checkpointToken = 0)
         {

@@ -70,7 +70,7 @@ namespace NEventStore
         {
             if (uncommittedEvent == null)
             {
-                throw new ArgumentNullException("uncommittedEvent");
+                throw new ArgumentNullException(nameof(uncommittedEvent));
             }
 
             if (uncommittedEvent.Body == null)

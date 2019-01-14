@@ -84,29 +84,11 @@ namespace NEventStore.Logging
             LogLevel = logLevel;
         }
 
-        public bool IsVerboseEnabled
-        {
-            get
-            {
-                return LogLevel <= LogLevel.Verbose;
-            }
-        }
+        public bool IsVerboseEnabled => LogLevel <= LogLevel.Verbose;
 
-        public bool IsDebugEnabled
-        {
-            get
-            {
-                return LogLevel <= LogLevel.Debug;
-            }
-        }
+        public bool IsDebugEnabled => LogLevel <= LogLevel.Debug;
 
-        public bool IsInfoEnabled
-        {
-            get
-            {
-                return LogLevel <= LogLevel.Info;
-            }
-        }
+        public bool IsInfoEnabled => LogLevel <= LogLevel.Info;
 
 
         public void Verbose(string message, params object[] values)

@@ -1,0 +1,25 @@
+<?xml version="1.0"?>
+<package xmlns="http://schemas.microsoft.com/packaging/2010/07/nuspec.xsd">
+  <metadata>
+    <id>NEventStoreAsync</id>
+    <version>1.0</version>
+    <title>NEventStoreAsync</title>
+    <authors>NEventStore Dev Team;Adrian Lewis</authors>
+    <owners>NEventStore Dev Team;Adrian Lewis</owners>
+    <projectUrl>https://github.com/dementeddevil/NEventStoreAsync</projectUrl>
+    <requireLicenseAcceptance>false</requireLicenseAcceptance>
+    <description>The purpose of an Event Store is to represent a series of events as a stream.</description>
+    <summary>
+        NEventStoreAsync is a persistence agnostic event sourcing library for .NET and .NET Core. The primary use is most often associated with CQRS and event-sourcing.
+        This project is heavily influenced by NEventStore however this library has been switched to utilise async programming practices where possible to allow better
+        performance with persistence engines that also support async programming APIs (such as Azure Blob storage)
+    </summary>
+    <language>es-US</language>
+    <tags>events, event sourcing, cqrs, storage, persistence, database</tags>
+	<releaseNotes>The.</releaseNotes>
+  </metadata>
+  <files>
+    <file src="publish-net40\NEventStore\bin\**" target="lib\net40"/>
+	<file src="src\NEventStore\**\*.cs" target="src\NEventStore" />
+  </files>  
+</package>

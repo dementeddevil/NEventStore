@@ -19,5 +19,5 @@ using System.Runtime.InteropServices;
 [assembly: ComVisible(false)]
 [assembly: CLSCompliant(false)]
 [assembly: NeutralResourcesLanguage("en-US")]
-[assembly: InternalsVisibleTo("NEventStore.Tests")]
-[assembly: InternalsVisibleTo("NEventStore.Core.Tests")]
+[assembly: InternalsVisibleTo("NEventStoreAsync.Tests")]
+[assembly: InternalsVisibleTo("NEventStoreAsync.Core.Tests")]

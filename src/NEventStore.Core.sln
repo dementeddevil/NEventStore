@@ -18,7 +18,7 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "serialization", "serializat
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = ".nuget", ".nuget", "{08A28C69-B04C-4622-8BF7-C9C4C410E64C}"
 	ProjectSection(SolutionItems) = preProject
-		.nuget\NEventStore.nuspec = .nuget\NEventStore.nuspec
+		.nuget\NEventStoreAsync.nuspec = .nuget\NEventStoreAsync.nuspec
 		.nuget\NuGet.Config = .nuget\NuGet.Config
 		.nuget\NuGet.targets = .nuget\NuGet.targets
 		.nuget\packages.config = .nuget\packages.config
@@ -26,28 +26,28 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = ".nuget", ".nuget", "{08A28C
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "core", "core", "{D35087BF-941A-49EA-96A8-B10457C4D169}"
 EndProject
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "NEventStore.Core", "NEventStore\NEventStore.Core.csproj", "{EB3ABF3B-295C-4BDD-8EA2-B60F30BC5E6C}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "NEventStoreAsync.Core", "NEventStore\NEventStoreAsync.Core.csproj", "{EB3ABF3B-295C-4BDD-8EA2-B60F30BC5E6C}"
 EndProject
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "NEventStore.Persistence.AcceptanceTests.Core", "NEventStore.Persistence.AcceptanceTests\NEventStore.Persistence.AcceptanceTests.Core.csproj", "{608A1D85-0999-4A9B-956A-11B91A1CB065}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "NEventStoreAsync.Persistence.AcceptanceTests.Core", "NEventStore.Persistence.AcceptanceTests\NEventStoreAsync.Persistence.AcceptanceTests.Core.csproj", "{608A1D85-0999-4A9B-956A-11B91A1CB065}"
 EndProject
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "NEventStore.Serialization.Json.Core", "NEventStore.Serialization.Json\NEventStore.Serialization.Json.Core.csproj", "{9A46374D-029C-4B87-88E3-0BE5D1D44C35}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "NEventStoreAsync.Serialization.Json.Core", "NEventStore.Serialization.Json\NEventStoreAsync.Serialization.Json.Core.csproj", "{9A46374D-029C-4B87-88E3-0BE5D1D44C35}"
 EndProject
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "NEventStore.Serialization.Json.Core.Tests", "NEventStore.Serialization.Json.Tests\NEventStore.Serialization.Json.Core.Tests.csproj", "{D7029339-3794-4275-893A-E705D872BFBE}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "NEventStoreAsync.Serialization.Json.Core.Tests", "NEventStore.Serialization.Json.Tests\NEventStoreAsync.Serialization.Json.Core.Tests.csproj", "{D7029339-3794-4275-893A-E705D872BFBE}"
 EndProject
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "NEventStore.Serialization.Bson.Core.Tests", "NEventStore.Serialization.Bson.Tests\NEventStore.Serialization.Bson.Core.Tests.csproj", "{2C6CE3D7-D2DF-49F7-B3AF-5767E1C3705A}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "NEventStoreAsync.Serialization.Bson.Core.Tests", "NEventStore.Serialization.Bson.Tests\NEventStoreAsync.Serialization.Bson.Core.Tests.csproj", "{2C6CE3D7-D2DF-49F7-B3AF-5767E1C3705A}"
 EndProject
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "NEventStore.Serialization.GZip.Core.Tests", "NEventStore.Serialization.Gzip.Tests\NEventStore.Serialization.GZip.Core.Tests.csproj", "{BCCDD838-8368-418D-82B5-5389FDDF0ADD}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "NEventStoreAsync.Serialization.GZip.Core.Tests", "NEventStore.Serialization.Gzip.Tests\NEventStoreAsync.Serialization.GZip.Core.Tests.csproj", "{BCCDD838-8368-418D-82B5-5389FDDF0ADD}"
 EndProject
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "NEventStore.Core.Tests", "NEventStore.Tests\NEventStore.Core.Tests.csproj", "{8860810C-5E46-4E60-8924-C6C77BBC6EB2}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "NEventStoreAsync.Core.Tests", "NEventStore.Tests\NEventStoreAsync.Core.Tests.csproj", "{8860810C-5E46-4E60-8924-C6C77BBC6EB2}"
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution Items", "{407B4AC0-6C11-4123-9BBA-094B2CADCD3A}"
 	ProjectSection(SolutionItems) = preProject
 		.editorconfig = .editorconfig
 	EndProjectSection
 EndProject
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "NEventStore.Serialization.Binary.Core.Tests", "NEventStore.Serialization.Binary.Tests\NEventStore.Serialization.Binary.Core.Tests.csproj", "{9F0BFA49-8711-4143-B813-ACD0D0B003FD}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "NEventStoreAsync.Serialization.Binary.Core.Tests", "NEventStore.Serialization.Binary.Tests\NEventStoreAsync.Serialization.Binary.Core.Tests.csproj", "{9F0BFA49-8711-4143-B813-ACD0D0B003FD}"
 EndProject
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "NEventStore.Serialization.Rijndael.Core.Tests", "NEventStore.Serialization.Rijndael.Tests\NEventStore.Serialization.Rijndael.Core.Tests.csproj", "{56B15268-DEBC-4E9F-8554-03737A39D71B}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "NEventStoreAsync.Serialization.Rijndael.Core.Tests", "NEventStore.Serialization.Rijndael.Tests\NEventStoreAsync.Serialization.Rijndael.Core.Tests.csproj", "{56B15268-DEBC-4E9F-8554-03737A39D71B}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution

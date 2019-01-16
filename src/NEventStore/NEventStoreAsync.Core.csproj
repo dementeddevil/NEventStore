@@ -11,10 +11,13 @@
     <Title>NEventStoreAsync</Title>
     <Authors>NEventStore Dev Team;Adrian Lewis</Authors>
     <PackageProjectUrl>https://github.com/dementeddevil/NEventStoreAsync</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/dementeddevil/NEventStoreAsync.git</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
     <PackageRequireLicenseAcceptance>false</PackageRequireLicenseAcceptance>
     <Description>The purpose of an Event Store is to represent a series of events as a stream.</Description>
     <PackageTags>events, event sourcing, cqrs, storage, persistence, database</PackageTags>
-    <PackageReleaseNotes>v6.x is not backwards compatible with v5.x. This package is similar to but incompatible with NEventStore! Please check the release notes on github.</PackageReleaseNotes>
+    <PackageReleaseNotes>This package is similar to but incompatible with NEventStore! Please check the release notes on github.</PackageReleaseNotes>
+    <PackageLicenseExpression>BSD-3-Clause</PackageLicenseExpression>
   </PropertyGroup>
   <PropertyGroup Condition="'$(TargetFramework)' == 'netstandard2.0'">
     <DefineConstants Condition="'$(Configuration)|$(Platform)'=='Debug|AnyCPU'">TRACE;DEBUG;NETSTANDARD2_0</DefineConstants>
